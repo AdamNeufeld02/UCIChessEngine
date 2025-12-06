@@ -1,0 +1,48 @@
+cmake_minimum_required(VERSION 3.16)
+project(ChessEngine LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if (MSVC)
+    add_compile_options(/W4 /permissive-)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+# 1) Engine core library
+add_library(engine_core
+    src/engine/board.cpp
+    src/engine/movegen.cpp
+)
+
+target_include_directories(engine_core
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# 2) UCI engine executable
+add_executable(uci_engine
+    apps/uci_main.cpp
+)
+
+target_link_libraries(uci_engine
+    PRIVATE engine_core
+)
+
+# 3) Tools / CLI executable (perft, bench, verify...)
+add_executable(engine_tools
+    apps/tools_main.cpp
+    tests/perft.cpp
+    tests/verification.cpp
+)
+
+target_include_directories(engine_tools
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+
+target_link_libraries(engine_tools
+    PRIVATE engine_core
+)
