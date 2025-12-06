@@ -8,13 +8,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if (MSVC)
     add_compile_options(/W4 /permissive-)
 else()
+    # Warnings
     add_compile_options(-Wall -Wextra -Wpedantic)
+
+    # Optimize Release builds
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
 endif()
 
 # 1) Engine core library
 add_library(engine_core
     src/engine/board.cpp
     src/engine/movegen.cpp
+    src/engine/bitboards.cpp
 )
 
 target_include_directories(engine_core
@@ -36,6 +41,7 @@ add_executable(engine_tools
     apps/tools_main.cpp
     tests/perft.cpp
     tests/verification.cpp
+    tests/unit_tests.cpp
 )
 
 target_include_directories(engine_tools
