@@ -1,5 +1,6 @@
 #include "engine/types.h"
 #include "engine/bitboards.h"
+#include "engine/move.h"
 #include <iostream>
 
 
@@ -30,6 +31,13 @@ void expectEq(engine::Bitboard actual, engine::Bitboard expected, const char* ms
         printBitboard(actual);
         std::cout << "\n";
         ++failures;
+    }
+}
+
+inline void expectEqInt(int actual, int expected, const char* msg) {
+    if (actual != expected) {
+        std::cout << "FAIL: " << msg << " (expected " << expected << ", got " << actual << ")\n";
+        failures++;
     }
 }
 
@@ -424,6 +432,122 @@ void runKingAttackTests() {
 
 }
 
+void runMoveTests() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running move encoding tests...\n";
+
+    // ---------------------------------------------
+    // Test 1: basic move (no flag)
+    // ---------------------------------------------
+    {
+        Move m = makeMoveBasic(E2, E4);
+
+        expectEqInt(fromSq(m), E2, "fromSq basic");
+        expectEqInt(toSq(m),   E4, "toSq basic");
+        expectEqInt(moveFlag(m), NOFLAG, "moveFlag basic");
+
+        expectEqInt(isPromotion(m), false, "isPromotion basic");
+        expectEqInt(isEnpassent(m), false, "isEnpassent basic");
+        expectEqInt(isCastle(m),    false, "isCastle basic");
+    }
+
+    // ---------------------------------------------
+    // Test 2: move with flag (castle)
+    // ---------------------------------------------
+    {
+        Move m = makeMoveWithFlag(E1, G1, CASTLE);
+
+        expectEqInt(fromSq(m), E1, "fromSq castle");
+        expectEqInt(toSq(m),   G1, "toSq castle");
+        expectEqInt(moveFlag(m), CASTLE, "moveFlag castle");
+
+        expectEqInt(isCastle(m), true, "isCastle check");
+        expectEqInt(isPromotion(m), false, "isPromotion castle");
+    }
+
+    // ---------------------------------------------
+    // Test 3: en-passant move
+    // ---------------------------------------------
+    {
+        Move m = makeMoveWithFlag(E5, D6, ENPASSENT);
+
+        expectEqInt(fromSq(m), E5, "fromSq enpassent");
+        expectEqInt(toSq(m),   D6, "toSq enpassent");
+        expectEqInt(moveFlag(m), ENPASSENT, "moveFlag enpassent");
+
+        expectEqInt(isEnpassent(m), true, "isEnpassent check");
+    }
+
+    // ---------------------------------------------
+    // Test 4: promotion move
+    // ---------------------------------------------
+    {
+        Move m = makePromoMove(E7, E8, QUEEN);
+
+        expectEqInt(fromSq(m), E7, "fromSq promo");
+        expectEqInt(toSq(m),   E8, "toSq promo");
+        expectEqInt(moveFlag(m), PROMOTION, "moveFlag promo");
+
+        expectEqInt(isPromotion(m), true, "isPromotion check");
+
+        // Promo piece encoded properly (Queen = PT_Queen)
+        expectEqInt(promoPiece(m), QUEEN, "promoPiece decoding");
+    }
+
+    // ---------------------------------------------
+    // Test 5: promotion as knight
+    // ---------------------------------------------
+    {
+        Move m = makePromoMove(H7, H8, KNIGHT);
+
+        expectEqInt(fromSq(m), H7, "fromSq promo knight");
+        expectEqInt(toSq(m),   H8, "toSq promo knight");
+        expectEqInt(moveFlag(m), PROMOTION, "moveFlag promo knight");
+
+        expectEqInt(promoPiece(m), KNIGHT, "promoPiece knight");
+    }
+
+    // ---------------------------------------------
+    // Test 6: round-trip correctness for a variety
+    // ---------------------------------------------
+    {
+        struct Test {
+            Square from, to;
+            Flags flag;
+            PieceType promo;
+            bool usePromo;
+        };
+
+        Test tests[] = {
+            {A1, H8, NOFLAG,    NONE,   false},
+            {B2, C3, CASTLE,    NONE,   false},
+            {H2, H4, ENPASSENT, NONE,   false},
+            {E7, E8, PROMOTION, QUEEN,  true},
+            {C7, C8, PROMOTION, KNIGHT, true},
+        };
+
+        for (const auto& t : tests) {
+            Move m = t.usePromo
+                     ? makePromoMove(t.from, t.to, t.promo)
+                     : makeMoveWithFlag(t.from, t.to, t.flag);
+
+            expectEqInt(fromSq(m), t.from, "roundtrip fromSq");
+            expectEqInt(toSq(m),   t.to,   "roundtrip toSq");
+
+            if (!t.usePromo)
+                expectEqInt(moveFlag(m), t.flag, "roundtrip flag");
+
+            if (t.usePromo)
+                expectEqInt(promoPiece(m), t.promo, "roundtrip promo");
+        }
+    }
+
+    std::cout << (failures == 0 ? "All move encoding tests passed.\n"
+                                : "Move encoding tests FAILED.\n");
+}
+
 }
 
 namespace tests_cli{
@@ -435,6 +559,7 @@ namespace tests_cli{
         tests::runBishopAttackTests();
         tests::runRookAttackTests();
         tests::runKingAttackTests();
+        tests::runMoveTests();
         return 0;
     }
 }
