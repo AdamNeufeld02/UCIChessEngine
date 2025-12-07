@@ -1,0 +1,245 @@
+#include <string>
+#include "engine/board.h"
+
+namespace engine{
+
+Board::Board() {
+    initFields();
+}
+
+void Board::initFields() {
+    for (int i = 0; i < PIECECOUNT; i++) {
+        pieceBB[i] = (Bitboard)0ULL;
+    }
+    for (int i = 0; i < SQUARECOUNT; i++) {
+        board[i] = EMPTY;
+    }
+    colourBB[WHITE] = (Bitboard)0ULL;
+    colourBB[BLACK] = (Bitboard)0ULL;
+    allPieces = (Bitboard)0ULL;
+    colToMove = WHITE;
+    st = nullptr;
+}
+
+void Board::initRootState(State* rootState) {
+    rootState->boardKey = (ZobristKey)0ULL;
+    rootState->castlingRights = CastlingRightsNone;
+    rootState->captured = EMPTY;
+    rootState->epSquare = NOSQUARE;
+    rootState->halfmoveClock = 0;
+    rootState->fullmoveNumber = 1;
+    rootState->previous = nullptr;
+}
+
+void Board::fenToBoard(std::string fenString, State* rootState) {
+    initFields();
+    initRootState(rootState);
+
+    std::istringstream iss(fenString);
+    std::string placement, sideStr, castlingStr, epStr, halfmoveStr, fullmoveStr;
+
+    if (!(iss >> placement >> sideStr >> castlingStr >> epStr >> halfmoveStr >> fullmoveStr)) {
+        throw std::runtime_error("Invalid FEN: not enough fields");
+    }
+
+    // 3) Piece placement
+    int rank = 7;
+    int file = 0;
+
+    for (char ch : placement) {
+        if (ch == '/') {
+            rank--;
+            file = 0;
+            continue;
+        }
+
+        if (ch >= '1' && ch <= '8') {
+            file += ch - '0';
+        } else {
+            if (file >= 8 || rank < 0) {
+                throw std::runtime_error("Invalid FEN: too many pieces in rank");
+            }
+            Square sq = squareFromFileRank(file, rank);
+            Piece pc = pieceFromFenChar(ch);
+            putPiece(pc, sq);
+            file++;
+        }
+    }
+
+    // 4) Side to move
+    if (sideStr == "w") {
+        colToMove = WHITE;
+    } else if (sideStr == "b") {
+        colToMove = BLACK;
+    } else {
+        throw std::runtime_error("Invalid FEN: side to move");
+    }
+
+    // 5) Castling rights
+    rootState->castlingRights = CastlingRightsNone;
+    if (castlingStr != "-") {
+        for (char c : castlingStr) {
+            switch (c) {
+            case 'K': rootState->castlingRights = static_cast<CastlingRight>(rootState->castlingRights | WhiteKingSide);  break;
+            case 'Q': rootState->castlingRights = static_cast<CastlingRight>(rootState->castlingRights | WhiteQueenSide); break;
+            case 'k': rootState->castlingRights = static_cast<CastlingRight>(rootState->castlingRights | BlackKingSide);  break;
+            case 'q': rootState->castlingRights = static_cast<CastlingRight>(rootState->castlingRights | BlackQueenSide); break;
+            default:
+                throw std::runtime_error("Invalid FEN: castling rights");
+            }
+        }
+    }
+
+    // 6) En passant square
+    if (epStr == "-") {
+        rootState->epSquare = NOSQUARE;
+    } else {
+        if (epStr.size() != 2)
+            throw std::runtime_error("Invalid FEN: ep square");
+
+        int file = fileFromChar(epStr[0]);
+        int rank = rankFromChar(epStr[1]);
+        if (file < 0 || file > 7 || rank < 0 || rank > 7)
+            throw std::runtime_error("Invalid FEN: ep square coords");
+        rootState->epSquare = squareFromFileRank(file, rank);
+    }
+
+    rootState->captured = EMPTY;
+    rootState->halfmoveClock = std::stoi(halfmoveStr);
+    rootState->fullmoveNumber = std::stoi(fullmoveStr);
+
+    rootState->previous = nullptr;
+    st = rootState;
+}
+
+void Board::makeMove(Move move, State* newState) {
+    Flags flag = moveFlag(move);
+    Square from = fromSq(move);
+    Square to = toSq(move);
+    
+    Colour us = colToMove;
+    Colour them = ~us;
+
+    Piece moved = pieceOn(from);
+    Piece capt = flag == ENPASSANT? makePiece(them, PAWN) : pieceOn(to);
+
+    memcpy(newState, st, offsetof(State, captured));
+
+    newState->captured = capt;
+    newState->halfmoveClock += 1;
+    if (us == BLACK) {
+        newState->fullmoveNumber += 1;
+    }
+
+    if (capt) {
+        int captSq = to;
+        if (flag == ENPASSANT) {
+            captSq = us == WHITE? captSq - 8 : captSq + 8;
+        }
+        newState->boardKey ^= zobrist::psq[capt][captSq];
+        removePiece(static_cast<Square>(captSq));
+        newState->halfmoveClock = 0;
+    }
+    if (flag == PROMOTION) {
+        newState->boardKey ^= zobrist::psq[pieceOn(from)][from];
+        removePiece(from);
+        putPiece(makePiece(us, promoPiece(move)), from);
+        newState->boardKey ^= zobrist::psq[pieceOn(from)][from];
+    }
+    if (flag == CASTLE) {
+        Square rookOrigin;
+        Square rookDest;
+        if (to > from) {
+            rookOrigin = static_cast<Square>(to + 1);
+            rookDest = static_cast<Square>(to - 1);
+        } else {
+            rookOrigin = static_cast<Square>(to - 2);
+            rookDest = static_cast<Square>(to + 1);
+        }
+        newState->boardKey ^= zobrist::psq[pieceOn(rookOrigin)][rookOrigin];
+        movePiece(rookOrigin, rookDest);
+        newState->boardKey ^= zobrist::psq[pieceOn(rookDest)][rookDest];
+    }
+
+    if (newState->epSquare != NOSQUARE) {
+        newState->boardKey ^= zobrist::epFile[newState->epSquare % 8];
+    }
+    newState->epSquare = NOSQUARE;
+
+    if (typeOf(moved) == PAWN) {
+        newState->halfmoveClock = 0;
+        if ((to ^ from) == 16) {
+            newState->epSquare = us == WHITE ? static_cast<Square>(from + 8) : static_cast<Square>(from - 8);
+            newState->boardKey ^= zobrist::epFile[newState->epSquare % 8];
+        }
+    }
+
+    newState->boardKey ^= zobrist::psq[pieceOn(from)][from];
+    movePiece(from, to);
+    newState->boardKey ^= zobrist::psq[pieceOn(to)][to];
+
+    colToMove = ~colToMove;
+    newState->boardKey ^= zobrist::sideToMoveKey;
+    newState->boardKey ^= zobrist::castlingKey[st->castlingRights];
+    newState->castlingRights = newState->castlingRights & (castlingRights[from] & castlingRights[to]);
+    newState->boardKey ^= zobrist::castlingKey[newState->castlingRights];
+
+    newState->previous = st;
+    st = newState;
+}
+
+void Board::undoMove(Move move) {
+    Flags flag = moveFlag(move);
+    Square from = fromSq(move);
+    Square to = toSq(move);
+
+    colToMove = ~colToMove;
+    Piece capt = st->captured;
+    st = st->previous;
+
+    movePiece(to, from);
+    if (capt) {
+        int captSq = to;
+        if (flag == ENPASSANT) {
+            captSq = colToMove == WHITE ? to - 8 : to + 8;
+        }
+        putPiece(capt, static_cast<Square>(captSq));
+    }
+    if (flag == PROMOTION) {
+        removePiece(from);
+        putPiece(makePiece(colToMove, PAWN), from);
+    }
+    if (flag == CASTLE) {
+        if (to > from) {
+            movePiece(static_cast<Square>(to - 1), static_cast<Square>(to + 1));
+        } else {
+            movePiece(static_cast<Square>(to + 1), static_cast<Square>(to - 2));
+        }
+    }
+}
+
+void Board::calcZobristHashFromScratch() {
+    ZobristKey key = 0ULL;
+
+    for (int sq = 0; sq < SQUARECOUNT; ++sq) {
+        Piece pc = board[sq];
+        if (pc != EMPTY) {
+            key ^= zobrist::psq[pc][sq];
+        }
+    }
+
+    key ^= zobrist::castlingKey[static_cast<CastlingRight>(st->castlingRights)];
+
+    if (st->epSquare != NOSQUARE) {
+        int fileEp = static_cast<int>(st->epSquare) & 7;
+        key ^= zobrist::epFile[fileEp];
+    }
+
+    if (colToMove == BLACK) {
+        key ^= zobrist::sideToMoveKey;
+    }
+
+    st->boardKey = key;
+}
+
+}

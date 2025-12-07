@@ -1,6 +1,8 @@
 #include "engine/types.h"
 #include "engine/bitboards.h"
 #include "engine/move.h"
+#include "engine/hashing.h"
+#include "engine/board.h"
 #include <iostream>
 
 
@@ -41,14 +43,52 @@ inline void expectEqInt(int actual, int expected, const char* msg) {
     }
 }
 
-void expect_true(bool cond, const char* msg) {
+void expectTrue(bool cond, const char* msg) {
     if (!cond) {
         std::cout << "FAIL: " << msg << "\n";
         ++failures;
     }
 }
 
+template <typename T>
+inline void expectEq(T actual, T expected, const char* msg) {
+    if (actual != expected) {
+        std::cout << "FAIL: " << msg
+                  << " (expected " << +expected << ", got " << +actual << ")\n";
+        ++failures;
+    }
+}
 
+// Recompute zobrist from scratch for a given Board+State
+inline engine::ZobristKey recomputeZobrist(const engine::Board& b, const engine::State* st) {
+    using namespace engine;
+    ZobristKey key = 0ULL;
+
+    // piece-square
+    for (int sq = 0; sq < SQUARECOUNT; ++sq) {
+        Square s = static_cast<Square>(sq);
+        Piece pc = b.pieceOn(s);
+        if (pc != EMPTY) {
+            key ^= zobrist::psq[pc][sq];
+        }
+    }
+
+    // castling
+    key ^= zobrist::castlingKey[static_cast<uint8_t>(st->castlingRights)];
+
+    // en passant (file only)
+    if (st->epSquare != NOSQUARE) {
+        int file = static_cast<int>(st->epSquare) & 7; // or % 8
+        key ^= zobrist::epFile[file];
+    }
+
+    // side to move
+    if (b.colToMove == BLACK) {
+        key ^= zobrist::sideToMoveKey;
+    }
+
+    return key;
+}
 
 void runBitshiftTests() {
     using namespace engine;
@@ -471,11 +511,11 @@ void runMoveTests() {
     // Test 3: en-passant move
     // ---------------------------------------------
     {
-        Move m = makeMoveWithFlag(E5, D6, ENPASSENT);
+        Move m = makeMoveWithFlag(E5, D6, ENPASSANT);
 
         expectEqInt(fromSq(m), E5, "fromSq enpassent");
         expectEqInt(toSq(m),   D6, "toSq enpassent");
-        expectEqInt(moveFlag(m), ENPASSENT, "moveFlag enpassent");
+        expectEqInt(moveFlag(m), ENPASSANT, "moveFlag enpassent");
 
         expectEqInt(isEnpassent(m), true, "isEnpassent check");
     }
@@ -523,7 +563,7 @@ void runMoveTests() {
         Test tests[] = {
             {A1, H8, NOFLAG,    NONE,   false},
             {B2, C3, CASTLE,    NONE,   false},
-            {H2, H4, ENPASSENT, NONE,   false},
+            {H2, H4, ENPASSANT, NONE,   false},
             {E7, E8, PROMOTION, QUEEN,  true},
             {C7, C8, PROMOTION, KNIGHT, true},
         };
@@ -548,6 +588,195 @@ void runMoveTests() {
                                 : "Move encoding tests FAILED.\n");
 }
 
+void runFenStartposTest() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running FEN startpos test...\n";
+
+    Board board;
+    State root{};
+    const std::string startFen =
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    board.fenToBoard(startFen, &root);
+
+    expectEq(board.colToMove, WHITE, "startpos side to move");
+
+    expectEq(board.pieceOn(E1), makePiece(WHITE, KING), "white king on E1");
+    expectEq(board.pieceOn(E8), makePiece(BLACK, KING), "black king on E8");
+    expectEq(board.pieceOn(A1), makePiece(WHITE, ROOK), "white rook on A1");
+    expectEq(board.pieceOn(H8), makePiece(BLACK, ROOK), "black rook on H8");
+
+    int pawnCount = 0;
+    for (int sq = 0; sq < SQUARECOUNT; ++sq) {
+        Piece pc = board.pieceOn(static_cast<Square>(sq));
+        if (typeOf(pc) == PAWN) pawnCount++;
+    }
+    expectEq(pawnCount, 16, "startpos pawn count = 16");
+
+    expectTrue(root.castlingRights & WhiteKingSide, "white K castling right");
+    expectTrue(root.castlingRights & WhiteQueenSide, "white Q castling right");
+    expectTrue(root.castlingRights & BlackKingSide, "black K castling right");
+    expectTrue(root.castlingRights & BlackQueenSide, "black Q castling right");
+
+    expectEq(root.epSquare, NOSQUARE, "startpos epSquare = NOSQUARE");
+
+    ZobristKey recomputed = recomputeZobrist(board, &root);
+    expectEq(root.boardKey, recomputed, "startpos zobrist matches recomputed");
+
+    std::cout << (failures == 0 ? "All fen start pos tests passed.\n"
+                                : "fen start pos tests FAILED.\n");
+}
+
+void runQuietMoveTest() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running quiet move test (e2e4)...\n";
+
+    Board board;
+    State root{};
+    State after{};
+    const std::string startFen =
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    board.fenToBoard(startFen, &root);
+
+    Move e2e4 = makeMoveBasic(E2, E4);
+    board.makeMove(e2e4, &after);
+
+    expectEq(board.pieceOn(E2), EMPTY, "e2 empty after e2e4");
+    expectEq(board.pieceOn(E4), makePiece(WHITE, PAWN), "white pawn on e4");
+
+    expectEq(board.colToMove, BLACK, "side to move after e2e4");
+
+    ZobristKey recomputedAfter = recomputeZobrist(board, &after);
+    expectEq(after.boardKey, recomputedAfter, "zobrist after e2e4 matches recomputed");
+
+    board.undoMove(e2e4);
+
+    expectEq(board.pieceOn(E2), makePiece(WHITE, PAWN), "e2 pawn restored after undo");
+    expectEq(board.pieceOn(E4), EMPTY, "e4 empty after undo");
+    expectEq(board.colToMove, WHITE, "side to move restored after undo");
+
+    ZobristKey recomputedRoot = recomputeZobrist(board, &root);
+    expectEq(root.boardKey, recomputedRoot, "zobrist restored to root after undo");
+
+    std::cout << (failures == 0 ? "All quiet move tests passed.\n"
+                                : "quiet move tests FAILED.\n");
+}
+
+void runCaptureMoveTest() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running capture move test...\n";
+
+    Board board;
+    State root{};
+    State after{};
+
+    // Simple position: white pawn on e4, black pawn on d5
+    const std::string fen =
+        "8/8/8/3p4/4P3/8/8/8 w - - 0 1";
+
+    board.fenToBoard(fen, &root);
+
+    Move e4d5 = makeMoveBasic(E4, D5);
+
+    board.makeMove(e4d5, &after);
+
+    expectEq(board.pieceOn(E4), EMPTY, "e4 empty after capture");
+    expectEq(board.pieceOn(D5), makePiece(WHITE, PAWN), "white pawn on d5 after capture");
+
+    expectEq(after.captured, makePiece(BLACK, PAWN), "captured piece stored in state");
+
+    board.undoMove(e4d5);
+
+    expectEq(board.pieceOn(E4), makePiece(WHITE, PAWN), "white pawn back on e4 after undo");
+    expectEq(board.pieceOn(D5), makePiece(BLACK, PAWN), "black pawn restored on d5 after undo");
+
+    ZobristKey recomputedRoot = recomputeZobrist(board, &root);
+    expectEq(root.boardKey, recomputedRoot, "capture undo zobrist restored");
+
+    std::cout << (failures == 0 ? "All capture move tests passed.\n"
+                            : "capture move tests FAILED.\n");
+}
+
+void runEnPassantMoveTest() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running en-passant move test...\n";
+
+    Board board;
+    State root{};
+    State after{};
+
+    // Position: white pawn on e5, black pawn on d5, ep square d6, white to move
+    const std::string fen =
+        "8/8/8/3pP3/8/8/8/8 w - d6 0 1";
+
+    board.fenToBoard(fen, &root);
+
+    Move epMove = makeMoveWithFlag(E5, D6, ENPASSANT);
+
+    board.makeMove(epMove, &after);
+
+    expectEq(board.pieceOn(E5), EMPTY, "e5 empty after ep");
+    expectEq(board.pieceOn(D5), EMPTY, "d5 pawn captured ep");
+    expectEq(board.pieceOn(D6), makePiece(WHITE, PAWN), "white pawn on d6 after ep");
+
+    board.undoMove(epMove);
+
+    expectEq(board.pieceOn(E5), makePiece(WHITE, PAWN), "e5 pawn restored after undo ep");
+    expectEq(board.pieceOn(D5), makePiece(BLACK, PAWN), "d5 pawn restored after undo ep");
+    expectEq(board.pieceOn(D6), EMPTY, "d6 empty after undo ep");
+
+    ZobristKey recomputedRoot = recomputeZobrist(board, &root);
+    expectEq(root.boardKey, recomputedRoot, "ep undo zobrist restored");
+
+    std::cout << (failures == 0 ? "All en-passant move tests passed.\n"
+                            : "en-passant move tests FAILED.\n");
+}
+
+void runPromotionMoveTest() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running promotion move test...\n";
+
+    Board board;
+    State root{};
+    State after{};
+
+    // White pawn on e7, black king e8, white king h1
+    const std::string fen =
+        "4k3/4P3/8/8/8/8/8/7K w - - 0 1";
+
+    board.fenToBoard(fen, &root);
+
+    Move promo = makePromoMove(E7, E8, QUEEN);
+
+    board.makeMove(promo, &after);
+
+    expectEq(board.pieceOn(E7), EMPTY, "e7 empty after promotion");
+    expectEq(board.pieceOn(E8), makePiece(WHITE, QUEEN), "white queen on e8 after promotion");
+
+    // Undo
+    board.undoMove(promo);
+
+    expectEq(board.pieceOn(E7), makePiece(WHITE, PAWN), "white pawn back on e7 after undo promo");
+    expectEq(board.pieceOn(E8), makePiece(BLACK, KING), "black king restored on e8 after undo promo");
+
+    ZobristKey recomputedRoot = recomputeZobrist(board, &root);
+    expectEq(root.boardKey, recomputedRoot, "promo undo zobrist restored");
+
+    std::cout << (failures == 0 ? "All promotion move tests passed.\n"
+                            : "promotion move tests FAILED.\n");
+}
+
 }
 
 namespace tests_cli{
@@ -560,6 +789,11 @@ namespace tests_cli{
         tests::runRookAttackTests();
         tests::runKingAttackTests();
         tests::runMoveTests();
+        tests::runFenStartposTest();
+        tests::runQuietMoveTest();
+        tests::runCaptureMoveTest();
+        tests::runEnPassantMoveTest();
+        tests::runPromotionMoveTest();
         return 0;
     }
 }

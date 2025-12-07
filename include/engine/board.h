@@ -1,0 +1,87 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <sstream>
+#include <stdexcept>
+#include "types.h"
+#include "move.h"
+#include "bitboards.h"
+#include "hashing.h"
+#include "parsing.h"
+
+namespace engine {
+
+struct State{
+    ZobristKey boardKey;
+    CastlingRight castlingRights;
+    Square epSquare;
+    int halfmoveClock;
+    int fullmoveNumber;
+
+    Piece captured;
+    State* previous;
+};
+
+class Board{
+public:
+    Bitboard pieceBB[PIECECOUNT];
+    Bitboard colourBB[COLOURNB];
+    Bitboard allPieces;
+    Piece board[SQUARECOUNT];
+    Colour colToMove;
+    State* st;
+
+
+public:
+    Board();
+    void initFields();
+    void initRootState(State* rootState);
+    void fenToBoard(std::string fenString, State* rootState);
+    void makeMove(Move move, State* newState);
+    void undoMove(Move move);
+
+    void putPiece(Piece pc, Square sq);
+    void removePiece(Square sq);
+    void movePiece(Square from, Square to);
+
+    void calcZobristHashFromScratch();
+
+    // Accessors
+    Piece pieceOn(Square sq) const;
+};
+
+inline Piece Board::pieceOn(Square sq) const {
+    return board[sq];
+}
+
+inline void Board::putPiece(Piece pc, Square sq) {
+    Bitboard place = bit(sq);
+    Colour col = colourOf(pc);
+    board[sq] = pc;
+    pieceBB[pc] |= place;
+    colourBB[col] |= place;
+    allPieces |= place;
+}
+
+inline void Board::removePiece(Square sq) {
+    Bitboard place = bit(sq);
+    Piece pc = board[sq];
+    Colour col = colourOf(pc);
+    pieceBB[pc] ^= place;
+    colourBB[col] ^= place;
+    allPieces ^= place;
+    board[sq] = EMPTY;
+}
+
+inline void Board::movePiece(Square from, Square to) {
+    Bitboard fromTo = bit(from) | bit(to);
+    Piece pc = board[from];
+    Colour col = colourOf(pc);
+    pieceBB[pc] ^= fromTo;
+    colourBB[col] ^= fromTo;
+    allPieces |= fromTo;
+    board[from] = EMPTY;
+    board[to] = pc; 
+}
+}

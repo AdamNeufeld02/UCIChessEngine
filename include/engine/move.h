@@ -9,7 +9,7 @@ typedef uint16_t Move;
 
 enum Flags : uint8_t {
     NOFLAG    = 0,
-    ENPASSENT = 1,
+    ENPASSANT = 1,
     PROMOTION = 2,
     CASTLE    = 3
 };
@@ -65,7 +65,7 @@ constexpr bool isPromotion(Move m) {
 }
 
 constexpr bool isEnpassent(Move m) {
-    return moveFlag(m) == ENPASSENT;
+    return moveFlag(m) == ENPASSANT;
 }
 
 constexpr bool isCastle(Move m) {
