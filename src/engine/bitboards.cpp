@@ -1,9 +1,30 @@
 #include "engine/bitboards.h"
+#include <stdexcept>
+#include <fstream>
+#include <vector>
+#include <string>
 
-namespace engine::bb {
+namespace engine {
+
+Magic rookMagics[SQUARECOUNT];
+Magic bishopMagics[SQUARECOUNT];
+
+Bitboard pawnAttacks[COLOURNB][SQUARECOUNT];
+Bitboard knightAttacks[SQUARECOUNT];
+Bitboard kingAttacks[SQUARECOUNT];
+Bitboard rookAttackTable[ROOK_ATTACK_TABLE_SIZE];
+Bitboard bishopAttackTable[BISHOP_ATTACK_TABLE_SIZE];
+
+namespace bb {
 
 void init(){
-
+    for (int i = 0; i < SQUARECOUNT; i++) {
+        pawnAttacks[WHITE][i] = computePawnAttacks(static_cast<Square>(i), WHITE);
+        pawnAttacks[BLACK][i] = computePawnAttacks(static_cast<Square>(i), BLACK);
+        knightAttacks[i] = computeKnightAttacks(static_cast<Square>(i));
+        kingAttacks[i] = computeKingAttacks(static_cast<Square>(i));
+    }
+    initMagicBitboards();
 }
 
 template<Direction Dir>
@@ -74,4 +95,196 @@ Bitboard computeKnightAttacks(Square sq) {
         shift<WEST>(shift<SOUTHWEST>(bb));    // W + SW = WSW
 }
 
-};
+Bitboard rookMask(Square sq) {
+    Bitboard mask = 0;
+    Bitboard bb = bit(sq);
+
+    Bitboard n = shift<NORTH>(bb);
+    while (n & ~Rank8BB) {
+        mask |= n;
+        n = shift<NORTH>(n);
+    }
+
+    Bitboard s = shift<SOUTH>(bb);
+    while (s & ~Rank1BB) {
+        mask |= s;
+        s = shift<SOUTH>(s);
+    }
+
+    Bitboard e = shift<EAST>(bb);
+    while (e & ~FileHBB) {
+        mask |= e;
+        e = shift<EAST>(e);
+    }
+
+    Bitboard w = shift<WEST>(bb);
+    while (w & ~FileABB) {
+        mask |= w;
+        w = shift<WEST>(w);
+    }
+
+    return mask;
+}
+
+Bitboard bishopMask(Square sq) {
+    Bitboard mask = 0;
+    Bitboard bb = bit(sq);
+
+    Bitboard ne = shift<NORTHEAST>(bb);
+    while (ne && (ne & ~Rank8BB) && (ne & ~FileHBB)) {
+        mask |= ne;
+        ne = shift<NORTHEAST>(ne);
+    }
+
+    Bitboard nw = shift<NORTHWEST>(bb);
+    while (nw && (nw & ~Rank8BB) && (nw & ~FileABB)) {
+        mask |= nw;
+        nw = shift<NORTHWEST>(nw);
+    }
+
+    Bitboard se = shift<SOUTHEAST>(bb);
+    while (se && (se & ~Rank1BB) && (se & ~FileHBB)) {
+        mask |= se;
+        se = shift<SOUTHEAST>(se);
+    }
+
+    Bitboard sw = shift<SOUTHWEST>(bb);
+    while (sw && (sw & ~Rank1BB) && (sw & ~FileABB)) {
+        mask |= sw;
+        sw = shift<SOUTHWEST>(sw);
+    }
+
+    return mask;
+}
+
+Bitboard indexToOccupancy(int index, Bitboard mask) {
+    Bitboard occ = 0;
+    int bitIndex = 0;
+
+    while (mask) {
+        Bitboard lsbBB = mask & -mask;
+        if (index & (1 << bitIndex)) {
+            occ |= lsbBB;
+        }
+        mask ^= lsbBB;
+        ++bitIndex;
+    }
+
+    return occ;
+}
+
+static void loadMagicNumbers(const char* path, Bitboard out[SQUARECOUNT]) {
+    std::ifstream in(path);
+    if (!in) {
+        throw std::runtime_error(std::string("Failed to open magic file: ") + path);
+    }
+    for (int sq = 0; sq < SQUARECOUNT; ++sq) {
+        std::uint64_t val;
+        in >> std::hex >> val;
+        if (!in) {
+            throw std::runtime_error("Failed to read magic for square " + std::to_string(sq));
+        }
+        out[sq] = static_cast<Bitboard>(val);
+    }
+}
+
+template<typename AttackFunc>
+static void buildMagicForSquare(
+    Magic& m,
+    Bitboard magicNumber,
+    Bitboard occMask,
+    int offset,
+    Bitboard* globalTable,
+    AttackFunc attackFunc
+) {
+    int relevantBits = popcount(occMask);
+    int entries = 1 << relevantBits;
+    int shift = 64 - relevantBits;
+
+    m.magic = magicNumber;
+    m.occMask = occMask;
+    m.shift = shift;
+    m.attacks = globalTable + offset;
+
+    std::vector<Bitboard> used(entries, 0ULL);
+    std::vector<bool> filled(entries, false);
+
+    for (int i = 0; i < entries; ++i) {
+        Bitboard occ = indexToOccupancy(i, occMask);
+        Bitboard attack = attackFunc(occ);
+        Bitboard key = (occ * magicNumber) >> shift;
+        int idx = static_cast<int>(key);
+
+        if (!filled[idx]) {
+            filled[idx] = true;
+            used[idx] = attack;
+        } else {
+            if (used[idx] != attack) {
+                throw std::runtime_error("Magic collision with different attacks at runtime!");
+            }
+        }
+    }
+
+    for (int i = 0; i < entries; ++i) {
+        globalTable[offset + i] = used[i];
+    }
+}
+
+void initMagicBitboards() {
+    Bitboard rookMagicNumbers[SQUARECOUNT];
+    Bitboard bishopMagicNumbers[SQUARECOUNT];
+
+    loadMagicNumbers("../data/rook_magics.txt",  rookMagicNumbers);
+    loadMagicNumbers("../data/bishop_magics.txt", bishopMagicNumbers);
+
+    Bitboard rookMasks[SQUARECOUNT];
+    Bitboard bishopMasks[SQUARECOUNT];
+    int rookBits[SQUARECOUNT];
+    int bishopBits[SQUARECOUNT];
+
+    for (int sq = 0; sq < SQUARECOUNT; ++sq) {
+        rookMasks[sq]   = rookMask(static_cast<Square>(sq));
+        bishopMasks[sq] = bishopMask(static_cast<Square>(sq));
+        rookBits[sq]    = popcount(rookMasks[sq]);
+        bishopBits[sq]  = popcount(bishopMasks[sq]);
+    }
+
+    int rookOffset = 0;
+    int bishopOffset = 0;
+
+    for (int sq = 0; sq < SQUARECOUNT; ++sq) {
+        Square s = static_cast<Square>(sq);
+
+        int rEntries = 1 << rookBits[sq];
+        buildMagicForSquare(
+            rookMagics[sq],
+            rookMagicNumbers[sq],
+            rookMasks[sq],
+            rookOffset,
+            rookAttackTable,
+            [s](Bitboard occ) { return computeRookAttacks(s, occ); }
+        );
+        rookOffset += rEntries;
+
+        int bEntries = 1 << bishopBits[sq];
+        buildMagicForSquare(
+            bishopMagics[sq],
+            bishopMagicNumbers[sq],
+            bishopMasks[sq],
+            bishopOffset,
+            bishopAttackTable,
+            [s](Bitboard occ) { return computeBishopAttacks(s, occ); }
+        );
+        bishopOffset += bEntries;
+    }
+
+    if (rookOffset != ROOK_ATTACK_TABLE_SIZE) {
+        throw std::runtime_error("ROOK_ATTACK_TABLE_SIZE mismatch");
+    }
+    if (bishopOffset != BISHOP_ATTACK_TABLE_SIZE) {
+        throw std::runtime_error("BISHOP_ATTACK_TABLE_SIZE mismatch");
+    }
+}
+
+}
+}

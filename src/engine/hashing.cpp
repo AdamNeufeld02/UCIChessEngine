@@ -17,22 +17,18 @@ static uint64_t random64() {
 }
 
 void initZobrist() {
-    // piece-square keys
     for (int p = 0; p < PIECECOUNT; ++p) {
         for (int sq = 0; sq < SQUARECOUNT; ++sq) {
             psq[p][sq] = random64();
         }
     }
 
-    // castling rights (0..15)
     for (int i = 0; i < 16; ++i)
         castlingKey[i] = random64();
 
-    // en-passant files (A..H)
     for (int f = 0; f < 8; ++f)
         epFile[f] = random64();
 
-    // side to move
     sideToMoveKey = random64();
 }
 }

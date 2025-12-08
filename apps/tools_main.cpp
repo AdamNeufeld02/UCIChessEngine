@@ -3,19 +3,23 @@
 #include <string_view>
 
 namespace perft_cli {
-    int run(int argc, char** argv);   // engine_tools perft ...
+    int run(int argc, char** argv);
 }
 
 namespace bench_cli {
-    int run(int argc, char** argv);   // engine_tools bench ...
+    int run(int argc, char** argv);
 }
 
 namespace verify_cli {
-    int run(int argc, char** argv);   // engine_tools verify ...
+    int run(int argc, char** argv);
 }
 
 namespace tests_cli {
-    int run(int argc, char** argv);   // engine_tools tests ...
+    int run(int argc, char** argv);
+}
+
+namespace magic_gen_cli {
+    int run(int argc, char** argv);
 }
 
 int main(int argc, char** argv) {
@@ -24,7 +28,8 @@ int main(int argc, char** argv) {
                   << "  engine_tools perft  [args...]\n"
                   << "  engine_tools bench  [args...]\n"
                   << "  engine_tools verify [args...]\n"
-                  << "  engine_tools tests  [args...]\n";
+                  << "  engine_tools tests  [args...]\n"
+                  << "  engine_tools gen_magics  [args...]\n";
         return 1;
     }
 
@@ -41,6 +46,8 @@ int main(int argc, char** argv) {
         return 0;
     } else if (cmd == "tests") {
         return tests_cli::run(argc - 1, argv + 1);
+    } else if (cmd == "gen_magics") {
+        return magic_gen_cli::run(argc - 1, argv + 1);
     }
 
     std::cerr << "Unknown command: " << cmd << "\n";
@@ -49,6 +56,7 @@ int main(int argc, char** argv) {
                   << "  engine_tools perft  [args...]\n"
                   << "  engine_tools bench  [args...]\n"
                   << "  engine_tools verify [args...]\n"
-                  << "  engine_tools tests  [args...]\n";
+                  << "  engine_tools tests  [args...]\n"
+                  << "  engine_tools gen_magics  [args...]\n";
     return 1;
 }

@@ -40,14 +40,15 @@ target_link_libraries(uci_engine
 # 3) Tools / CLI executable (perft, bench, verify...)
 add_executable(engine_tools
     apps/tools_main.cpp
-    tests/perft.cpp
-    tests/verification.cpp
-    tests/unit_tests.cpp
+    tools/perft.cpp
+    tools/verification.cpp
+    tools/unit_tests.cpp
+    tools/magicGen.cpp
 )
 
 target_include_directories(engine_tools
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tool
 )
 
 target_link_libraries(engine_tools

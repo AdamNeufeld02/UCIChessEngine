@@ -162,7 +162,7 @@ void Board::makeMove(Move move, State* newState) {
     }
 
     if (newState->epSquare != NOSQUARE) {
-        newState->boardKey ^= zobrist::epFile[newState->epSquare % 8];
+        newState->boardKey ^= zobrist::epFile[newState->epSquare & 7];
     }
     newState->epSquare = NOSQUARE;
 
@@ -170,7 +170,7 @@ void Board::makeMove(Move move, State* newState) {
         newState->halfmoveClock = 0;
         if ((to ^ from) == 16) {
             newState->epSquare = us == WHITE ? static_cast<Square>(from + 8) : static_cast<Square>(from - 8);
-            newState->boardKey ^= zobrist::epFile[newState->epSquare % 8];
+            newState->boardKey ^= zobrist::epFile[newState->epSquare & 7];
         }
     }
 

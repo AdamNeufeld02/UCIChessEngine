@@ -64,7 +64,6 @@ inline engine::ZobristKey recomputeZobrist(const engine::Board& b, const engine:
     using namespace engine;
     ZobristKey key = 0ULL;
 
-    // piece-square
     for (int sq = 0; sq < SQUARECOUNT; ++sq) {
         Square s = static_cast<Square>(sq);
         Piece pc = b.pieceOn(s);
@@ -73,16 +72,13 @@ inline engine::ZobristKey recomputeZobrist(const engine::Board& b, const engine:
         }
     }
 
-    // castling
     key ^= zobrist::castlingKey[static_cast<uint8_t>(st->castlingRights)];
 
-    // en passant (file only)
     if (st->epSquare != NOSQUARE) {
-        int file = static_cast<int>(st->epSquare) & 7; // or % 8
+        int file = static_cast<int>(st->epSquare) & 7;
         key ^= zobrist::epFile[file];
     }
 
-    // side to move
     if (b.colToMove == BLACK) {
         key ^= zobrist::sideToMoveKey;
     }
@@ -777,11 +773,127 @@ void runPromotionMoveTest() {
                             : "promotion move tests FAILED.\n");
 }
 
+void runGenAttacksBBTests() {
+    using namespace engine;
+    using namespace engine::bb;
+
+    failures = 0;
+    std::cout << "Running genAttacksBB tests...\n";
+
+    // ----------------------------------------
+    // Knights & kings: should ignore occupancy
+    // ----------------------------------------
+    {
+        Bitboard occ1 = 0ULL;
+        Bitboard occ2 = bit(A1) | bit(H8) | bit(D4); // random junk
+
+        Bitboard k1 = genAttacksBB<KNIGHT>(D4, occ1);
+        Bitboard k2 = genAttacksBB<KNIGHT>(D4, occ2);
+        Bitboard expectedKnight = knightAttacks[D4];
+
+        expectEq(k1, expectedKnight, "genAttacksBB KNIGHT (occ = 0) from D4");
+        expectEq(k2, expectedKnight, "genAttacksBB KNIGHT (with occ) from D4");
+    }
+
+    {
+        Bitboard occ1 = 0ULL;
+        Bitboard occ2 = bit(C3) | bit(E5);
+
+        Bitboard k1 = genAttacksBB<KING>(E4, occ1);
+        Bitboard k2 = genAttacksBB<KING>(E4, occ2);
+        Bitboard expectedKing = kingAttacks[E4];
+
+        expectEq(k1, expectedKing, "genAttacksBB KING (occ = 0) from E4");
+        expectEq(k2, expectedKing, "genAttacksBB KING (with occ) from E4");
+    }
+
+    // ----------------------------------------
+    // Bishops & rooks: empty board vs reference
+    // ----------------------------------------
+    {
+        Bitboard occ = 0ULL;
+
+        Bitboard bAtt = genAttacksBB<BISHOP>(D4, occ);
+        Bitboard bRef = computeBishopAttacks(D4, occ);
+        expectEq(bAtt, bRef, "genAttacksBB BISHOP vs computeBishopAttacks on empty board (D4)");
+
+        Bitboard rAtt = genAttacksBB<ROOK>(D4, occ);
+        Bitboard rRef = computeRookAttacks(D4, occ);
+        expectEq(rAtt, rRef, "genAttacksBB ROOK vs computeRookAttacks on empty board (D4)");
+    }
+
+    // ----------------------------------------
+    // Bishops & rooks: with blockers (same as existing tests)
+    // ----------------------------------------
+    {
+        // Bishop from D4 with blockers F6, B2
+        Bitboard occ = 0ULL;
+        occ |= bit(F6);
+        occ |= bit(B2);
+
+        Bitboard bAtt = genAttacksBB<BISHOP>(D4, occ);
+        Bitboard bRef = computeBishopAttacks(D4, occ);
+        expectEq(bAtt, bRef, "genAttacksBB BISHOP vs computeBishopAttacks with blockers on F6/B2");
+    }
+
+    {
+        // Rook from D4 with blockers D6, B4
+        Bitboard occ = 0ULL;
+        occ |= bit(D6);
+        occ |= bit(B4);
+
+        Bitboard rAtt = genAttacksBB<ROOK>(D4, occ);
+        Bitboard rRef = computeRookAttacks(D4, occ);
+        expectEq(rAtt, rRef, "genAttacksBB ROOK vs computeRookAttacks with blockers on D6/B4");
+    }
+
+    // ----------------------------------------
+    // Queen: should be bishop | rook for same occupancy
+    // ----------------------------------------
+    {
+        Bitboard occ = 0ULL;
+        occ |= bit(D6);
+        occ |= bit(B4);
+        occ |= bit(F6);
+        occ |= bit(B2);
+
+        Bitboard qAtt = genAttacksBB<QUEEN>(D4, occ);
+        Bitboard bRef = computeBishopAttacks(D4, occ);
+        Bitboard rRef = computeRookAttacks(D4, occ);
+        Bitboard expected = bRef | rRef;
+
+        expectEq(qAtt, expected, "genAttacksBB QUEEN == bishop|rook from D4 with blockers");
+    }
+
+    // ----------------------------------------
+    // Edge cases for sliders: corners
+    // ----------------------------------------
+    {
+        Bitboard occ = 0ULL;
+        Bitboard bAtt = genAttacksBB<BISHOP>(A1, occ);
+        Bitboard bRef = computeBishopAttacks(A1, occ);
+        expectEq(bAtt, bRef, "genAttacksBB BISHOP from A1 on empty board");
+    }
+
+    {
+        Bitboard occ = 0ULL;
+        Bitboard rAtt = genAttacksBB<ROOK>(H8, occ);
+        Bitboard rRef = computeRookAttacks(H8, occ);
+        expectEq(rAtt, rRef, "genAttacksBB ROOK from H8 on empty board");
+    }
+
+    std::cout << (failures == 0 ? "All genAttacksBB tests passed.\n"
+                                : "genAttacksBB tests FAILED.\n");
+}
+
 }
 
 namespace tests_cli{
 
-    int run(int argc, char** argv){
+    int run(int argc, char** argv) {
+        (void)argc;
+        (void)argv;
+        engine::bb::init();
         tests::runBitshiftTests();
         tests::runPawnAttackTests();
         tests::runKnightAttackTests();
@@ -794,6 +906,7 @@ namespace tests_cli{
         tests::runCaptureMoveTest();
         tests::runEnPassantMoveTest();
         tests::runPromotionMoveTest();
+        tests::runGenAttacksBBTests();
         return 0;
     }
 }

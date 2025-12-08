@@ -1,7 +1,14 @@
 #pragma once
-#include "Types.h"
+#include "types.h"
 
 namespace engine {
+
+struct Magic {
+    Bitboard* attacks;
+    Bitboard occMask;
+    Bitboard magic;
+    int shift;
+};
 
 constexpr Bitboard FileABB = 0x0101010101010101ULL;
 constexpr Bitboard FileBBB = FileABB << 1;
@@ -20,6 +27,20 @@ constexpr Bitboard Rank5BB = Rank1BB << (8 * 4);
 constexpr Bitboard Rank6BB = Rank1BB << (8 * 5);
 constexpr Bitboard Rank7BB = Rank1BB << (8 * 6);
 constexpr Bitboard Rank8BB = Rank1BB << (8 * 7);
+
+extern Magic rookMagics[SQUARECOUNT];
+extern Magic bishopMagics[SQUARECOUNT];
+
+constexpr int ROOK_ATTACK_TABLE_SIZE = 102400;
+constexpr int BISHOP_ATTACK_TABLE_SIZE = 5248;
+
+// Precomputed Attack Sets
+// Rook and Bishop attack sets are handled by magic bitboard lookups
+extern Bitboard pawnAttacks[COLOURNB][SQUARECOUNT];
+extern Bitboard knightAttacks[SQUARECOUNT];
+extern Bitboard kingAttacks[SQUARECOUNT];
+extern Bitboard rookAttackTable[ROOK_ATTACK_TABLE_SIZE];
+extern Bitboard bishopAttackTable[BISHOP_ATTACK_TABLE_SIZE];
 
 
 inline int popcount(Bitboard b) {
@@ -97,6 +118,43 @@ namespace bb {
 
     template<Direction... Dirs>
     constexpr Bitboard stepInDirections(Bitboard bb);
+
+    void initMagicBitboards();
+
+    Bitboard rookMask(Square sq);
+    Bitboard bishopMask(Square sq);
+    Bitboard indexToOccupancy(int index, Bitboard mask);
+}
+
+inline Bitboard rookAttacks(Square sq, Bitboard occ) {
+    const Magic& m = rookMagics[sq];
+    Bitboard key = ((occ & m.occMask) * m.magic) >> m.shift;
+    return m.attacks[key];
+}
+
+inline Bitboard bishopAttacks(Square sq, Bitboard occ) {
+    const Magic& m = bishopMagics[sq];
+    Bitboard key = ((occ & m.occMask) * m.magic) >> m.shift;
+    return m.attacks[key];
+}
+
+template<PieceType pt>
+inline Bitboard genAttacksBB(Square square, Bitboard occ) {
+    using namespace bb;
+    switch (pt) {
+    case KNIGHT:
+        return knightAttacks[square];
+    case BISHOP:
+        return bishopAttacks(square, occ);
+    case ROOK:
+        return rookAttacks(square, occ);
+    case QUEEN:
+        return bishopAttacks(square, occ) | rookAttacks(square, occ);
+    case KING:
+        return kingAttacks[square];
+    default:
+        return 0ULL;
+    }
 }
 
 }
