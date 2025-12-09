@@ -10,6 +10,54 @@ namespace tests {
 
 int failures = 0;
 
+static char pieceToChar(engine::Piece p) {
+    if (p == engine::EMPTY) return '.';
+
+    engine::PieceType pt = typeOf(p);
+    engine::Colour col   = colourOf(p);
+
+    char c = '?';
+    switch (pt) {
+        case engine::PAWN:   c = 'P'; break;
+        case engine::KNIGHT: c = 'N'; break;
+        case engine::BISHOP: c = 'B'; break;
+        case engine::ROOK:   c = 'R'; break;
+        case engine::QUEEN:  c = 'Q'; break;
+        case engine::KING:   c = 'K'; break;
+        case engine::NONE:   c = '.'; break;
+    }
+    return (col == engine::WHITE ? c : tolower(c));
+}
+
+static void printBoard(const engine::Board& b) {
+    std::cout << "\n============== CURRENT BOARD ==============\n\n";
+
+    for (int rank = 7; rank >= 0; --rank) {
+        std::cout << (rank + 1) << "  ";
+        for (int file = 0; file < 8; ++file) {
+            engine::Square sq = static_cast<engine::Square>(rank * 8 + file);
+            engine::Piece p   = b.pieceOn(sq);
+            std::cout << pieceToChar(p) << " ";
+        }
+        std::cout << "\n";
+    }
+
+    std::cout << "\n   a b c d e f g h\n";
+
+    std::cout << "\nSide to move: "
+              << (b.sideToMove() == engine::WHITE ? "White" : "Black") << "\n";
+
+    std::cout << "All pieces BB: 0x" << std::hex << b.allPieces << std::dec << "\n";
+    std::cout << "White pieces BB: 0x" << std::hex << b.colourBB[engine::WHITE] << std::dec << "\n";
+    std::cout << "Black pieces BB: 0x" << std::hex << b.colourBB[engine::BLACK] << std::dec << "\n";
+
+    std::cout << "White king square: " << int(b.kingSquare(engine::WHITE)) << "\n";
+    std::cout << "Black king square: " << int(b.kingSquare(engine::BLACK)) << "\n";
+
+    std::cout << "\n===========================================\n\n";
+}
+
+
 void printBitboard(engine::Bitboard bb) {
     std::cout << "\nBitboard:\n";
     for (int rank = 7; rank >= 0; --rank) {           // 8 ranks, top to bottom
@@ -111,6 +159,192 @@ void runBitshiftTests() {
 
     std::cout << (failures == 0 ? "All bitboard tests passed.\n"
                                 : "Bitboard tests FAILED.\n");
+}
+
+void runBetweenBBTests() {
+    using namespace engine;
+    using namespace engine::bb;
+
+    failures = 0;
+    std::cout << "Running betweenBB / lineBB tests...\n";
+
+    // ----------------------------------------
+    // 1. Vertical between: E2 → E7
+    // ----------------------------------------
+    {
+        Bitboard actualBetween = betweenBB[E2][E7];
+
+        Bitboard expectedBetween = 0ULL;
+        expectedBetween |= bit(E3);
+        expectedBetween |= bit(E4);
+        expectedBetween |= bit(E5);
+        expectedBetween |= bit(E6);
+        expectedBetween |= bit(E7);  // second square always included
+
+        expectEq(actualBetween, expectedBetween, "betweenBB[E2][E7] vertical up");
+
+        // lineBB: full E-file (A2..H2? nope: full file E1..E8)
+        Bitboard actualLine = lineBB[E2][E7];
+
+        Bitboard expectedLine = 0ULL;
+        expectedLine |= bit(E1);
+        expectedLine |= bit(E2);
+        expectedLine |= bit(E3);
+        expectedLine |= bit(E4);
+        expectedLine |= bit(E5);
+        expectedLine |= bit(E6);
+        expectedLine |= bit(E7);
+        expectedLine |= bit(E8);
+
+        expectEq(actualLine, expectedLine, "lineBB[E2][E7] full E-file");
+        expectEq(lineBB[E7][E2], expectedLine, "lineBB[E7][E2] symmetry full E-file");
+    }
+
+    // E7 → E2
+    {
+        Bitboard actualBetween = betweenBB[E7][E2];
+
+        Bitboard expectedBetween = 0ULL;
+        expectedBetween |= bit(E6);
+        expectedBetween |= bit(E5);
+        expectedBetween |= bit(E4);
+        expectedBetween |= bit(E3);
+        expectedBetween |= bit(E2);  // second square always included
+
+        expectEq(actualBetween, expectedBetween, "betweenBB[E7][E2] vertical down");
+    }
+
+    // ----------------------------------------
+    // 2. Horizontal between: A4 → F4
+    // ----------------------------------------
+    {
+        Bitboard actualBetween = betweenBB[A4][F4];
+
+        Bitboard expectedBetween = 0ULL;
+        expectedBetween |= bit(B4);
+        expectedBetween |= bit(C4);
+        expectedBetween |= bit(D4);
+        expectedBetween |= bit(E4);
+        expectedBetween |= bit(F4);  // second square always included
+
+        expectEq(actualBetween, expectedBetween, "betweenBB[A4][F4] horizontal right");
+
+        // lineBB: full 4th rank A4..H4
+        Bitboard actualLine = lineBB[A4][F4];
+
+        Bitboard expectedLine = 0ULL;
+        expectedLine |= bit(A4);
+        expectedLine |= bit(B4);
+        expectedLine |= bit(C4);
+        expectedLine |= bit(D4);
+        expectedLine |= bit(E4);
+        expectedLine |= bit(F4);
+        expectedLine |= bit(G4);
+        expectedLine |= bit(H4);
+
+        expectEq(actualLine, expectedLine, "lineBB[A4][F4] full 4th rank");
+        expectEq(lineBB[F4][A4], expectedLine, "lineBB[F4][A4] symmetry full 4th rank");
+    }
+
+    // F4 → A4
+    {
+        Bitboard actualBetween = betweenBB[F4][A4];
+
+        Bitboard expectedBetween = 0ULL;
+        expectedBetween |= bit(E4);
+        expectedBetween |= bit(D4);
+        expectedBetween |= bit(C4);
+        expectedBetween |= bit(B4);
+        expectedBetween |= bit(A4);  // second square always included
+
+        expectEq(actualBetween, expectedBetween, "betweenBB[F4][A4] horizontal left");
+    }
+
+    // ----------------------------------------
+    // 3. Diagonal between: C1 → H6
+    // ----------------------------------------
+    {
+        Bitboard actualBetween = betweenBB[C1][H6];
+
+        Bitboard expectedBetween = 0ULL;
+        expectedBetween |= bit(D2);
+        expectedBetween |= bit(E3);
+        expectedBetween |= bit(F4);
+        expectedBetween |= bit(G5);
+        expectedBetween |= bit(H6);  // second square always included
+
+        expectEq(actualBetween, expectedBetween, "betweenBB[C1][H6] diagonal up-right");
+
+        // lineBB: full diagonal C1–H6
+        Bitboard actualLine = lineBB[C1][H6];
+
+        Bitboard expectedLine = 0ULL;
+        expectedLine |= bit(C1);
+        expectedLine |= bit(D2);
+        expectedLine |= bit(E3);
+        expectedLine |= bit(F4);
+        expectedLine |= bit(G5);
+        expectedLine |= bit(H6);
+
+        expectEq(actualLine, expectedLine, "lineBB[C1][H6] full diagonal");
+        expectEq(lineBB[H6][C1], expectedLine, "lineBB[H6][C1] symmetry diagonal");
+    }
+
+    // H6 → C1
+    {
+        Bitboard actualBetween = betweenBB[H6][C1];
+
+        Bitboard expectedBetween = 0ULL;
+        expectedBetween |= bit(G5);
+        expectedBetween |= bit(F4);
+        expectedBetween |= bit(E3);
+        expectedBetween |= bit(D2);
+        expectedBetween |= bit(C1);  // second square always included
+
+        expectEq(actualBetween, expectedBetween, "betweenBB[H6][C1] diagonal down-left");
+    }
+
+    // ----------------------------------------
+    // 4. Non-aligned squares: betweenBB just second, lineBB = 0
+    // ----------------------------------------
+    {
+        Bitboard actualBetween = betweenBB[A1][B3];
+        Bitboard actualLine    = lineBB[A1][B3];
+
+        Bitboard expectedBetween = 0ULL;
+        expectedBetween |= bit(B3);  // not on same line/diag, only second square
+
+        expectEq(actualBetween, expectedBetween, "betweenBB[A1][B3] non-aligned");
+        expectEq(actualLine, Bitboard{0}, "lineBB[A1][B3] non-aligned should be 0");
+    }
+
+    {
+        Bitboard actualBetween = betweenBB[D4][E6];
+        Bitboard actualLine    = lineBB[D4][E6];
+
+        Bitboard expectedBetween = 0ULL;
+        expectedBetween |= bit(E6);  // knight move relation, no line => only second
+
+        expectEq(actualBetween, expectedBetween, "betweenBB[D4][E6] knight-like non-aligned");
+        expectEq(actualLine, Bitboard{0}, "lineBB[D4][E6] knight-like non-aligned should be 0");
+    }
+
+    // ----------------------------------------
+    // 5. Same square: betweenBB is that square, lineBB is 0
+    // ----------------------------------------
+    {
+        Bitboard actualBetween = betweenBB[E4][E4];
+        Bitboard actualLine    = lineBB[E4][E4];
+
+        Bitboard expectedBetween = 0ULL;
+        expectedBetween |= bit(E4);  // second square always included (same as first)
+
+        expectEq(actualBetween, expectedBetween, "betweenBB[E4][E4] same square");
+        expectEq(actualLine, Bitboard{0}, "lineBB[E4][E4] same square should be 0");
+    }
+
+    std::cout << (failures == 0 ? "All betweenBB / lineBB tests passed.\n"
+                                : "betweenBB / lineBB tests FAILED.\n");
 }
 
 void runPawnAttackTests() {
@@ -675,7 +909,7 @@ void runCaptureMoveTest() {
 
     // Simple position: white pawn on e4, black pawn on d5
     const std::string fen =
-        "8/8/8/3p4/4P3/8/8/8 w - - 0 1";
+        "k7/8/8/3p4/4P3/8/8/K7 w - - 0 1";
 
     board.fenToBoard(fen, &root);
 
@@ -712,7 +946,7 @@ void runEnPassantMoveTest() {
 
     // Position: white pawn on e5, black pawn on d5, ep square d6, white to move
     const std::string fen =
-        "8/8/8/3pP3/8/8/8/8 w - d6 0 1";
+        "k7/8/8/3pP3/8/8/8/K7 w - d6 0 1";
 
     board.fenToBoard(fen, &root);
 
@@ -747,9 +981,9 @@ void runPromotionMoveTest() {
     State root{};
     State after{};
 
-    // White pawn on e7, black king e8, white king h1
+    // White pawn on e7, black bishop e8, white king h1
     const std::string fen =
-        "4k3/4P3/8/8/8/8/8/7K w - - 0 1";
+        "k3b3/4P3/8/8/8/8/8/7K w - - 0 1";
 
     board.fenToBoard(fen, &root);
 
@@ -764,7 +998,7 @@ void runPromotionMoveTest() {
     board.undoMove(promo);
 
     expectEq(board.pieceOn(E7), makePiece(WHITE, PAWN), "white pawn back on e7 after undo promo");
-    expectEq(board.pieceOn(E8), makePiece(BLACK, KING), "black king restored on e8 after undo promo");
+    expectEq(board.pieceOn(E8), makePiece(BLACK, BISHOP), "black bishop restored on e8 after undo promo");
 
     ZobristKey recomputedRoot = recomputeZobrist(board, &root);
     expectEq(root.boardKey, recomputedRoot, "promo undo zobrist restored");
@@ -886,6 +1120,198 @@ void runGenAttacksBBTests() {
                                 : "genAttacksBB tests FAILED.\n");
 }
 
+void runLegalMoveTests() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running legalMove() tests...\n";
+
+    State root{};
+
+    //----------------------------------------------------------
+    // 1. EN PASSANT: ILLEGAL due to discovered rook check
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("7k/8/8/2rPpK2/8/8/8/8 w - e6 0 1", &root);
+        Move m = makeMoveWithFlag(D5, E6, ENPASSANT);
+        expectEq(b.legalMove(m), false, "illegal en passant discovered rook check");
+    }
+
+    //----------------------------------------------------------
+    // 2. EN PASSANT: LEGAL normal case (same board w/o rook)
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("7k/8/8/3PpK2/8/8/8/8 w - e6 0 1", &root);
+        Move m = makeMoveWithFlag(D5, E6, ENPASSANT);
+        expectEq(b.legalMove(m), true, "legal en passant");
+    }
+
+    //----------------------------------------------------------
+    // 3. CASTLING ILLEGAL: king passes through attacked square
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/8/8/8/8/6b1/R3K2R w KQ - 0 1", &root);
+        Move m = makeMoveWithFlag(E1, G1, CASTLE);
+        expectEq(b.legalMove(m), false, "illegal castle (passed-through-check)");
+    }
+
+    //----------------------------------------------------------
+    // 4. CASTLING LEGAL: standard K-side castle
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1", &root);
+        Move m = makeMoveWithFlag(E1, G1, CASTLE);
+        expectEq(b.legalMove(m), true, "legal castle");
+    }
+
+    //----------------------------------------------------------
+    // 5. KING MOVE ILLEGAL: king moves into rook check
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/8/8/8/8/4r3/4K3 w - - 0 1", &root);
+        Move m = makeMoveWithFlag(E1, D2, NOFLAG);
+        expectEq(b.legalMove(m), false, "illegal king move into check");
+    }
+
+    //----------------------------------------------------------
+    // 6. KING MOVE LEGAL
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/8/8/8/8/4r3/4K3 w - - 0 1", &root);
+        Move m = makeMoveWithFlag(E1, D1, NOFLAG);
+        expectEq(b.legalMove(m), true, "legal king move");
+    }
+
+    //----------------------------------------------------------
+    // 7. PINNED KNIGHT: ILLEGAL move off pin line
+    //
+    // Rook pins knight e2 to king e1
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/8/8/4r3/8/4N3/4K3 w - - 0 1", &root);
+
+        // Knight pseudo legal move
+        Move legal_along = makeMoveWithFlag(E2, G3, NOFLAG);
+        expectEq(b.legalMove(legal_along), false, "illegal pinned knight move");
+    }
+
+    //----------------------------------------------------------
+    // 8. PINNED ROOK: LEGAL move toward the pinner (along line)
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/4r3/8/8/8/4R3/4K3 w - - 0 1", &root);
+
+        Move m = makeMoveWithFlag(E2, E4, NOFLAG);
+        expectEq(b.legalMove(m), true, "rook pinned: must move in line");
+    }
+
+    //----------------------------------------------------------
+    // 9. PINNED ROOK: LEGAL move (along file)
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/4r3/8/8/8/4R3/4K3 w - - 0 1", &root);
+
+        Move m = makeMoveWithFlag(E2, E3, NOFLAG); // along pin line
+        expectEq(b.legalMove(m), true, "rook pinned: legal along file");
+    }
+
+    //----------------------------------------------------------
+    // 10. PINNED ROOK: ILLEGAL sideways move
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/4r3/8/8/8/4R3/4K3 w - - 0 1", &root);
+        Move m = makeMoveWithFlag(E2, F2, NOFLAG); // sideways
+        expectEq(b.legalMove(m), false, "rook pinned: illegal sideways");
+    }
+
+    //----------------------------------------------------------
+    // 11. PINNED BISHOP: LEGAL move along diagonal pin line
+    //
+    // Bishop on c3 pinned to king c1 by rook on c8.
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/7b/8/8/4B3/8/2K5 w - - 0 1", &root);
+        Move m = makeMoveWithFlag(E3, F4, NOFLAG); // diagonal toward rook
+        expectEq(b.legalMove(m), true, "pinned bishop: legal along diagonal");
+    }
+
+    //----------------------------------------------------------
+    // 12. PINNED BISHOP: ILLEGAL diagonal off the pin line
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/7b/8/8/4B3/8/2K5 w - - 0 1", &root);
+        Move m = makeMoveWithFlag(E3, D4, NOFLAG);  // diagonal but not on pin ray
+        expectEq(b.legalMove(m), false, "pinned bishop: illegal off diagonal pin line");
+    }
+
+    //----------------------------------------------------------
+    // 13. PINNED PAWN: legal forward move along pin line
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/4q3/8/8/8/8/4P3/4K3 w - - 0 1", &root);
+        Move m = makeMoveWithFlag(E2, E3, NOFLAG);
+        expectEq(b.legalMove(m), true, "pinned pawn: legal forward along file");
+    }
+
+    //----------------------------------------------------------
+    // 14. PINNED PAWN: illegal diagonal capture off file
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/4q3/8/8/8/3r4/4P3/4K3 w - - 0 1", &root);
+        Move m = makeMoveWithFlag(E2, D3, NOFLAG); // diagonal
+        expectEq(b.legalMove(m), false, "pinned pawn: illegal diagonal");
+    }
+
+    //----------------------------------------------------------
+    // 15. LEGAL CASTLING: rook square attacked
+    //
+    // Black rook on h8 attacks h1 → castling legal
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k2r/8/8/8/8/8/8/4K2R w K - 0 1", &root);
+        Move m = makeMoveWithFlag(E1, G1, CASTLE);
+        expectEq(b.legalMove(m), true, "legal castle: rook square attacked");
+    }
+
+    //----------------------------------------------------------
+    // 16. ILLEGAL CASTLING: king is in check
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4rk2/8/8/8/8/8/8/4K2R w K - 0 1", &root);
+        Move m = makeMoveWithFlag(E1, G1, CASTLE);
+        expectEq(b.legalMove(m), false, "illegal castle: king in check");
+    }
+
+    //----------------------------------------------------------
+    // 17. ILLEGAL CASTLING: king passes through check
+    //----------------------------------------------------------
+    {
+        Board b;
+        b.fenToBoard("4k3/8/8/8/8/8/1b6/R3K2R w KQ - 0 1", &root);
+        Move m = makeMoveWithFlag(E1, C1, CASTLE);
+        expectEq(b.legalMove(m), false, "illegal castle: passes through check");
+    }
+
+    std::cout << (failures == 0 ? "All legalMove() tests passed.\n"
+                                : "legalMove() tests FAILED.\n");
+}
+
 }
 
 namespace tests_cli{
@@ -895,6 +1321,7 @@ namespace tests_cli{
         (void)argv;
         engine::bb::init();
         tests::runBitshiftTests();
+        tests::runBetweenBBTests();
         tests::runPawnAttackTests();
         tests::runKnightAttackTests();
         tests::runBishopAttackTests();
@@ -907,6 +1334,7 @@ namespace tests_cli{
         tests::runEnPassantMoveTest();
         tests::runPromotionMoveTest();
         tests::runGenAttacksBBTests();
+        tests::runLegalMoveTests();
         return 0;
     }
 }

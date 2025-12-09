@@ -15,6 +15,9 @@ Bitboard kingAttacks[SQUARECOUNT];
 Bitboard rookAttackTable[ROOK_ATTACK_TABLE_SIZE];
 Bitboard bishopAttackTable[BISHOP_ATTACK_TABLE_SIZE];
 
+Bitboard betweenBB[SQUARECOUNT][SQUARECOUNT];
+Bitboard lineBB[SQUARECOUNT][SQUARECOUNT];
+
 namespace bb {
 
 void init(){
@@ -25,6 +28,39 @@ void init(){
         kingAttacks[i] = computeKingAttacks(static_cast<Square>(i));
     }
     initMagicBitboards();
+    initBetweenBBAndLineBB();
+}
+
+void initBetweenBBAndLineBB() {
+    for (int sq1 = 0; sq1 < SQUARECOUNT; ++sq1) {
+        Square s1 = static_cast<Square>(sq1);
+        Bitboard s1BB = bit(s1);
+
+        Bitboard rookRays   = genAttacksBB<ROOK>(s1, 0);
+        Bitboard bishopRays = genAttacksBB<BISHOP>(s1, 0);
+
+        for (int sq2 = 0; sq2 < SQUARECOUNT; ++sq2) {
+            Square s2 = static_cast<Square>(sq2);
+            Bitboard s2BB = bit(s2);
+
+            Bitboard between = 0ULL;
+            Bitboard line = 0ULL;
+
+            if (rookRays & s2BB) {
+                between = genAttacksBB<ROOK>(s1, s2BB) &
+                          genAttacksBB<ROOK>(s2, s1BB);
+                line = (rookRays & genAttacksBB<ROOK>(s2, 0)) | s1BB | s2BB;
+            } else if (bishopRays & s2BB) {
+                between = genAttacksBB<BISHOP>(s1, s2BB) &
+                          genAttacksBB<BISHOP>(s2, s1BB);
+                line = (bishopRays & genAttacksBB<BISHOP>(s2, 0)) | s1BB | s2BB;
+            }
+
+            between |= s2BB;
+            betweenBB[sq1][sq2] = between;
+            lineBB[sq1][sq2] = line;
+        }
+    }
 }
 
 template<Direction Dir>

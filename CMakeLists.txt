@@ -48,7 +48,7 @@ add_executable(engine_tools
 
 target_include_directories(engine_tools
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/tool
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools
 )
 
 target_link_libraries(engine_tools

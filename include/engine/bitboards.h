@@ -42,23 +42,26 @@ extern Bitboard kingAttacks[SQUARECOUNT];
 extern Bitboard rookAttackTable[ROOK_ATTACK_TABLE_SIZE];
 extern Bitboard bishopAttackTable[BISHOP_ATTACK_TABLE_SIZE];
 
+extern Bitboard betweenBB[SQUARECOUNT][SQUARECOUNT];
+extern Bitboard lineBB[SQUARECOUNT][SQUARECOUNT];
+
 
 inline int popcount(Bitboard b) {
     return __builtin_popcountll(b);
 }
 
 inline int lsb(Bitboard b) {
-    return __builtin_ctzll(b);  // count trailing zeros
+    return __builtin_ctzll(b);
 }
 
 inline int msb(Bitboard b) {
-    return 63 - __builtin_clzll(b);  // count leading zeros
+    return 63 - __builtin_clzll(b);
 }
 
-inline Bitboard pop_lsb(Bitboard& b) {
-    Bitboard l = b & -b;  // isolate lowest 1 bit
-    b ^= l;
-    return l;
+inline int pop_lsb(Bitboard& bb) {
+    int sq = lsb(bb);
+    bb &= bb-1;
+    return sq;
 }
 
 inline int squarescan_lsb(Bitboard& b) {
@@ -74,10 +77,8 @@ constexpr Bitboard shift(Bitboard bb) {
     } else if constexpr (Dir == SOUTH) {
         return bb >> 8;
     } else if constexpr (Dir == EAST) {
-        // Moving east: anything on file H disappears
         return (bb & ~FileHBB) << 1;
     } else if constexpr (Dir == WEST) {
-        // Moving west: anything on file A disappears
         return (bb & ~FileABB) >> 1;
     } else if constexpr (Dir == NORTHEAST) {
         return (bb & ~FileHBB) << 9;
@@ -89,7 +90,7 @@ constexpr Bitboard shift(Bitboard bb) {
         return (bb & ~FileABB) >> 9;
     } else {
         static_assert(Dir == NORTH, "Unsupported Direction in shift<>");
-        return bb; // unreachable, but keeps compiler happy
+        return bb;
     }
 }
 
@@ -101,8 +102,14 @@ inline Bitboard bit(Square sq) {
     return ((Bitboard)1 << sq);
 }
 
+inline bool moreThanOne(Bitboard bb) {
+    return bb & (bb - 1);
+}
+
 namespace bb {
     void init();
+    void initMagicBitboards();
+    void initBetweenBBAndLineBB();
 
     Bitboard computePawnAttacks(Square sq, Colour col);
     Bitboard computeRookAttacks(Square sq, Bitboard occ);
@@ -118,8 +125,6 @@ namespace bb {
 
     template<Direction... Dirs>
     constexpr Bitboard stepInDirections(Bitboard bb);
-
-    void initMagicBitboards();
 
     Bitboard rookMask(Square sq);
     Bitboard bishopMask(Square sq);

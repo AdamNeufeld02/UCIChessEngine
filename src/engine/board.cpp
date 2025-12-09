@@ -1,5 +1,6 @@
 #include <string>
 #include "engine/board.h"
+#include <iostream>
 
 namespace engine{
 
@@ -25,6 +26,9 @@ void Board::initRootState(State* rootState) {
     rootState->boardKey = (ZobristKey)0ULL;
     rootState->castlingRights = CastlingRightsNone;
     rootState->captured = EMPTY;
+    rootState->checkers = 0ULL;
+    rootState->blockersForKing[WHITE] = 0ULL;
+    rootState->blockersForKing[BLACK] = 0ULL;
     rootState->epSquare = NOSQUARE;
     rootState->halfmoveClock = 0;
     rootState->fullmoveNumber = 1;
@@ -110,6 +114,8 @@ void Board::fenToBoard(std::string fenString, State* rootState) {
 
     rootState->previous = nullptr;
     st = rootState;
+
+    updateChecksAndPins(colToMove);
 }
 
 void Board::makeMove(Move move, State* newState) {
@@ -186,6 +192,8 @@ void Board::makeMove(Move move, State* newState) {
 
     newState->previous = st;
     st = newState;
+
+    updateChecksAndPins(colToMove);
 }
 
 void Board::undoMove(Move move) {
@@ -240,6 +248,92 @@ void Board::calcZobristHashFromScratch() {
     }
 
     st->boardKey = key;
+}
+
+Bitboard Board::getAttackers(Square sq, Colour col, Bitboard occ) const {
+    Bitboard attackers = genAttacksBB<ROOK>(sq, occ) & (pieces(col, ROOK) | pieces(col, QUEEN));
+    attackers |= genAttacksBB<BISHOP>(sq, occ) & (pieces(col, BISHOP) | pieces(col, QUEEN));
+    attackers |= genAttacksBB<KNIGHT>(sq, occ) & pieces(col, KNIGHT);
+    attackers |= genAttacksBB<KING>(sq, occ) & pieces(col, KING);
+    attackers |= pawnAttacks[~col][sq] & pieces(col, PAWN);
+    return attackers;
+}
+
+void Board::updateKingBlockers(Colour col) {
+    Square ksq = kingSquare(col);
+    Bitboard potentialThreats = (genAttacksBB<ROOK>(ksq, 0) & (pieces(~col, ROOK) | pieces(~col, QUEEN))) |
+                                (genAttacksBB<BISHOP>(ksq, 0) & (pieces(~col, BISHOP) | pieces(~col, QUEEN)));
+
+    Bitboard blockers = 0;
+    Bitboard occupancy = allPieces ^ potentialThreats;
+
+    while (potentialThreats) {
+        int threatSq = pop_lsb(potentialThreats);
+        Bitboard pinned = betweenBB[ksq][threatSq] & occupancy;
+
+        if (pinned && !moreThanOne(pinned)) {
+            blockers |= pinned;
+        }
+    }
+
+    st->blockersForKing[col] = blockers;
+}
+
+void Board::updateChecksAndPins(Colour col) {
+    st->checkers = getAttackers(kingSquare(col), ~col, allPieces);
+    updateKingBlockers(WHITE);
+    updateKingBlockers(BLACK);
+}
+
+void printBitboard(engine::Bitboard bb) {
+    std::cout << "\nBitboard:\n";
+    for (int rank = 7; rank >= 0; --rank) {           // 8 ranks, top to bottom
+        for (int file = 0; file < 8; ++file) {        // 8 files, left to right
+            int sq = rank * 8 + file;                 // square index 0..63
+            engine::Bitboard mask = 1ULL << sq;
+
+            std::cout << ((bb & mask) ? "1 " : ". ");
+        }
+        std::cout << "  " << (rank + 1) << "\n";      // rank label
+    }
+    std::cout << "\nA B C D E F G H\n\n";             // file labels
+}
+
+bool Board::legalMove(Move move) const {
+    Colour us = colToMove;
+    Square from = fromSq(move);
+    Square to = toSq(move);
+    Flags flag = moveFlag(move);
+
+    if (flag == ENPASSANT) {
+        Square ksq = kingSquare(us);
+        Square capsq = us == WHITE ? to + SOUTH : to + NORTH; 
+
+        Bitboard occupied = (pieces() ^ bit(from) ^ bit(capsq)) | bit(to);
+
+        return !(genAttacksBB<ROOK>(ksq, occupied) & (pieces(~us, ROOK) | pieces(~us, QUEEN))) &&
+               !(genAttacksBB<BISHOP>(ksq, occupied) & (pieces(~us, BISHOP) | pieces(~us, QUEEN)));
+    }
+
+    if (flag == CASTLE) {
+        Direction step = to > from ? WEST : EAST;
+        Square s = to;
+        while(true) {
+            if (getAttackers(s, ~us, allPieces)) {
+                return false;
+            }
+            if (s == from) {
+                return true;
+            }
+            s += step;
+        }
+    }
+    
+    if (pieceOn(from) == makePiece(us, KING)) {
+        return !getAttackers(to, ~us, allPieces ^ bit(from));
+    }
+
+    return !(st->blockersForKing[us] & bit(from)) || (lineBB[from][to] & pieces(us, KING));
 }
 
 }
