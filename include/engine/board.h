@@ -62,6 +62,10 @@ public:
     Bitboard pieces() const;
     Colour sideToMove() const;
     Square kingSquare(Colour col) const;
+    Square epSquare() const;
+    Bitboard checkers() const;
+    bool canCastle(CastlingRight cr) const;
+    bool castlingBlocked(CastlingRight cr) const;
 };
 
 inline Piece Board::pieceOn(Square sq) const {
@@ -86,6 +90,22 @@ inline Colour Board::sideToMove() const {
 
 inline Square Board::kingSquare(Colour col) const {
     return static_cast<Square>(lsb(pieces(col, KING)));
+}
+
+inline Bitboard Board::checkers() const {
+    return st->checkers;
+}
+
+inline bool Board::canCastle(CastlingRight cr) const {
+    return st->castlingRights & cr;
+}
+
+inline bool Board::castlingBlocked(CastlingRight cr) const {
+    return allPieces & castleMasks[cr];
+}
+
+inline Square Board::epSquare() const {
+    return st->epSquare;
 }
 
 inline void Board::putPiece(Piece pc, Square sq) {
@@ -113,7 +133,7 @@ inline void Board::movePiece(Square from, Square to) {
     Colour col = colourOf(pc);
     pieceBB[pc] ^= fromTo;
     colourBB[col] ^= fromTo;
-    allPieces |= fromTo;
+    allPieces ^= fromTo;
     board[from] = EMPTY;
     board[to] = pc; 
 }

@@ -44,6 +44,7 @@ extern Bitboard bishopAttackTable[BISHOP_ATTACK_TABLE_SIZE];
 
 extern Bitboard betweenBB[SQUARECOUNT][SQUARECOUNT];
 extern Bitboard lineBB[SQUARECOUNT][SQUARECOUNT];
+extern Bitboard castleMasks[BlackQueenSide + 1];
 
 
 inline int popcount(Bitboard b) {
@@ -58,10 +59,10 @@ inline int msb(Bitboard b) {
     return 63 - __builtin_clzll(b);
 }
 
-inline int pop_lsb(Bitboard& bb) {
+inline Square pop_lsb(Bitboard& bb) {
     int sq = lsb(bb);
     bb &= bb-1;
-    return sq;
+    return static_cast<Square>(sq);
 }
 
 inline int squarescan_lsb(Bitboard& b) {

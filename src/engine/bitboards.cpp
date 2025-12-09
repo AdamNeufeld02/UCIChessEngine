@@ -17,6 +17,7 @@ Bitboard bishopAttackTable[BISHOP_ATTACK_TABLE_SIZE];
 
 Bitboard betweenBB[SQUARECOUNT][SQUARECOUNT];
 Bitboard lineBB[SQUARECOUNT][SQUARECOUNT];
+Bitboard castleMasks[BlackQueenSide + 1];
 
 namespace bb {
 
@@ -29,6 +30,10 @@ void init(){
     }
     initMagicBitboards();
     initBetweenBBAndLineBB();
+    castleMasks[WhiteKingSide] = (Bitboard)0x60;
+    castleMasks[WhiteQueenSide] = (Bitboard)0xe;
+    castleMasks[BlackKingSide] = castleMasks[WhiteKingSide] << 56;
+    castleMasks[BlackQueenSide] = castleMasks[WhiteQueenSide] << 56;
 }
 
 void initBetweenBBAndLineBB() {

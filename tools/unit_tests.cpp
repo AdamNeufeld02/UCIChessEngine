@@ -4,6 +4,9 @@
 #include "engine/hashing.h"
 #include "engine/board.h"
 #include <iostream>
+#include "engine/movegen.h"
+#include <vector>
+#include <algorithm>
 
 
 namespace tests {
@@ -70,6 +73,53 @@ void printBitboard(engine::Bitboard bb) {
         std::cout << "  " << (rank + 1) << "\n";      // rank label
     }
     std::cout << "\nA B C D E F G H\n\n";             // file labels
+}
+
+static std::vector<engine::Move> sortAndUnique(std::vector<engine::Move> v) {
+    std::sort(v.begin(), v.end());
+    v.erase(std::unique(v.begin(), v.end()), v.end());
+    return v;
+}
+
+static void expectMoveSetsEqual(const std::vector<engine::Move>& a,
+                                const std::vector<engine::Move>& b,
+                                const char* msg) {
+    auto sa = sortAndUnique(a);
+    auto sb = sortAndUnique(b);
+
+    if (sa != sb) {
+        std::cout << "FAIL: " << msg
+                  << " (|A|=" << sa.size()
+                  << ", |B|=" << sb.size() << ")\n";
+
+        std::cout << "  A moves (sorted, unique):";
+        for (auto m : sa) std::cout << " " << +m;
+        std::cout << "\n  B moves (sorted, unique):";
+        for (auto m : sb) std::cout << " " << +m;
+        std::cout << "\n";
+
+        ++failures;
+    }
+}
+
+template <engine::GenType Type>
+static std::vector<engine::Move> collectMovesFiltered(engine::Board& b) {
+    using namespace engine;
+    Move buffer[256];
+    Move* end = generate<Type>(b, buffer);
+
+    std::vector<Move> out;
+    out.reserve(end - buffer);
+
+    for (Move* m = buffer; m != end; ++m) {
+        if constexpr (Type == GEN_LEGAL) {
+            out.push_back(*m);
+        } else {
+            if (b.legalMove(*m))
+                out.push_back(*m);
+        }
+    }
+    return out;
 }
 
 void expectEq(engine::Bitboard actual, engine::Bitboard expected, const char* msg) {
@@ -1190,8 +1240,6 @@ void runLegalMoveTests() {
 
     //----------------------------------------------------------
     // 7. PINNED KNIGHT: ILLEGAL move off pin line
-    //
-    // Rook pins knight e2 to king e1
     //----------------------------------------------------------
     {
         Board b;
@@ -1236,8 +1284,6 @@ void runLegalMoveTests() {
 
     //----------------------------------------------------------
     // 11. PINNED BISHOP: LEGAL move along diagonal pin line
-    //
-    // Bishop on c3 pinned to king c1 by rook on c8.
     //----------------------------------------------------------
     {
         Board b;
@@ -1278,8 +1324,6 @@ void runLegalMoveTests() {
 
     //----------------------------------------------------------
     // 15. LEGAL CASTLING: rook square attacked
-    //
-    // Black rook on h8 attacks h1 → castling legal
     //----------------------------------------------------------
     {
         Board b;
@@ -1312,6 +1356,112 @@ void runLegalMoveTests() {
                                 : "legalMove() tests FAILED.\n");
 }
 
+void runGenLegalConsistencyTests() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running movegen consistency tests (GEN_LEGAL vs subgenerators)...\n";
+
+    // --------------------------
+    // Positions where NOT in check:
+    // GEN_LEGAL == GEN_CAPTURES ∪ GEN_QUIETS
+    // --------------------------
+    {
+        struct NonCheckCase {
+            const char* fen;
+            const char* name;
+        };
+
+        NonCheckCase cases[] = {
+            {
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                "startpos"
+            },
+            {
+                "r3k2r/pppq1ppp/2npbn2/4p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w kq - 0 10",
+                "castle_middlegame"
+            },
+            {
+                "8/4P3/k7/8/8/8/8/4K2k w - - 0 1",
+                "quiet_promotion"
+            },
+            {
+                "4r3/4P3/8/8/8/8/8/4K2k w - - 0 1",
+                "capture_promotion"
+            },
+        };
+
+        for (const auto& c : cases) {
+            Board b;
+            State root{};
+            b.fenToBoard(c.fen, &root);
+
+            Bitboard checkers = b.checkers();
+            if (checkers != 0ULL) {
+                std::cout << "WARNING: Non-check test position '" << c.name
+                          << "' is actually in check (checkers=0x"
+                          << std::hex << checkers << std::dec << ")\n";
+            }
+
+            auto legal  = collectMovesFiltered<GEN_LEGAL>(b);
+            auto caps   = collectMovesFiltered<GEN_CAPTURES>(b);
+            auto quiets = collectMovesFiltered<GEN_QUIETS>(b);
+
+            std::vector<Move> unionCQ = caps;
+            unionCQ.insert(unionCQ.end(), quiets.begin(), quiets.end());
+
+            expectMoveSetsEqual(unionCQ, legal,
+                                (std::string("GEN_LEGAL vs GEN_CAPTURES∪GEN_QUIETS (") +
+                                 c.name + ")").c_str());
+        }
+    }
+
+    // --------------------------
+    // Positions where IN check:
+    // GEN_LEGAL == GEN_EVASIONS
+    // --------------------------
+    {
+        struct CheckCase {
+            const char* fen;
+            const char* name;
+        };
+
+        CheckCase cases[] = {
+            {
+                "4k3/7q/r7/8/4R3/8/8/4K3 b - - 0 1",
+                "single_check_file"
+            },
+            {
+                "R3k3/8/pp4bb/8/4R3/8/8/4K3 b - - 0 1",
+                "double_check"
+            },
+        };
+
+        for (const auto& c : cases) {
+            Board b;
+            State root{};
+            b.fenToBoard(c.fen, &root);
+
+            Bitboard checkers = b.checkers();
+            if (checkers == 0ULL) {
+                std::cout << "WARNING: Check test position '" << c.name
+                          << "' is NOT in check (checkers=0)\n";
+            }
+
+            auto legal    = collectMovesFiltered<GEN_LEGAL>(b);
+            auto evasions = collectMovesFiltered<GEN_EVASIONS>(b);
+
+            expectMoveSetsEqual(evasions, legal,
+                                (std::string("GEN_LEGAL vs GEN_EVASIONS (") +
+                                 c.name + ")").c_str());
+        }
+    }
+
+    std::cout << (failures == 0
+                    ? "All movegen consistency tests passed.\n"
+                    : "movegen consistency tests FAILED.\n");
+}
+
 }
 
 namespace tests_cli{
@@ -1335,6 +1485,7 @@ namespace tests_cli{
         tests::runPromotionMoveTest();
         tests::runGenAttacksBBTests();
         tests::runLegalMoveTests();
+        tests::runGenLegalConsistencyTests();
         return 0;
     }
 }

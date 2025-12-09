@@ -36,8 +36,7 @@ int main(int argc, char** argv) {
     std::string_view cmd{argv[1]};
 
     if (cmd == "perft") {
-        std::cout << "Not Implmented Yet" << "\n";
-        return 0;
+        return perft_cli::run(argc - 1, argv + 1);
     } else if (cmd == "bench") {
         std::cout << "Not Implmented Yet" << "\n";
         return 0;

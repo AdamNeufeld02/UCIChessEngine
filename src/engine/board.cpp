@@ -1,6 +1,5 @@
 #include <string>
 #include "engine/board.h"
-#include <iostream>
 
 namespace engine{
 
@@ -40,10 +39,14 @@ void Board::fenToBoard(std::string fenString, State* rootState) {
     initRootState(rootState);
 
     std::istringstream iss(fenString);
-    std::string placement, sideStr, castlingStr, epStr, halfmoveStr, fullmoveStr;
 
-    if (!(iss >> placement >> sideStr >> castlingStr >> epStr >> halfmoveStr >> fullmoveStr)) {
-        throw std::runtime_error("Invalid FEN: not enough fields");
+    std::string placement, sideStr, castlingStr, epStr;
+
+    std::string halfmoveStr = "0";
+    std::string fullmoveStr = "1";
+
+    if (!(iss >> placement >> sideStr >> castlingStr >> epStr)) {
+        throw std::runtime_error("Invalid FEN: missing required fields");
     }
 
     // 3) Piece placement
@@ -109,6 +112,8 @@ void Board::fenToBoard(std::string fenString, State* rootState) {
     }
 
     rootState->captured = EMPTY;
+    iss >> halfmoveStr;
+    iss >> fullmoveStr;
     rootState->halfmoveClock = std::stoi(halfmoveStr);
     rootState->fullmoveNumber = std::stoi(fullmoveStr);
 
@@ -283,20 +288,6 @@ void Board::updateChecksAndPins(Colour col) {
     st->checkers = getAttackers(kingSquare(col), ~col, allPieces);
     updateKingBlockers(WHITE);
     updateKingBlockers(BLACK);
-}
-
-void printBitboard(engine::Bitboard bb) {
-    std::cout << "\nBitboard:\n";
-    for (int rank = 7; rank >= 0; --rank) {           // 8 ranks, top to bottom
-        for (int file = 0; file < 8; ++file) {        // 8 files, left to right
-            int sq = rank * 8 + file;                 // square index 0..63
-            engine::Bitboard mask = 1ULL << sq;
-
-            std::cout << ((bb & mask) ? "1 " : ". ");
-        }
-        std::cout << "  " << (rank + 1) << "\n";      // rank label
-    }
-    std::cout << "\nA B C D E F G H\n\n";             // file labels
 }
 
 bool Board::legalMove(Move move) const {

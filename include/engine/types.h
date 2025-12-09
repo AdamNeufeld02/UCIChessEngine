@@ -57,6 +57,10 @@ inline Square operator+(Direction dir, Square sq) {
     return sq + dir;
 }
 
+inline Square operator-(Square sq, Direction dir) {
+    return static_cast<Square>(static_cast<int>(sq) - static_cast<int>(dir));
+}
+
 inline Square& operator+=(Square& sq, Direction dir) {
     sq = static_cast<Square>(static_cast<int>(sq) + static_cast<int>(dir));
     return sq;
