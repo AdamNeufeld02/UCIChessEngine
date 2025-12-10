@@ -15,7 +15,7 @@ constexpr Colour operator~(Colour c) {
 
 enum PieceType {
     NONE,
-    PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING
+    PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING, PIECETYPECOUNT
 };
 
 enum Piece {
@@ -23,6 +23,12 @@ enum Piece {
     WHITEPAWN = PAWN, WHITEKNIGHT, WHITEBISHOP, WHITEROOK, WHITEQUEEN, WHITEKING,
     BLACKPAWN = WHITEPAWN + 8, BLACKKNIGHT, BLACKBISHOP, BLACKROOK, BLACKQUEEN, BLACKKING,
     PIECECOUNT
+};
+
+enum Phase {
+    PHASEMG = 0,
+    PHASEEG = 1,
+    PHASENB
 };
 
 enum Square : int8_t {

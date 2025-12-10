@@ -21,6 +21,7 @@ add_library(engine_core
     src/engine/movegen.cpp
     src/engine/bitboards.cpp
     src/engine/hashing.cpp
+    src/engine/eval.cpp
 )
 
 target_include_directories(engine_core

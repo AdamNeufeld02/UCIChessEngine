@@ -9,6 +9,7 @@
 #include "bitboards.h"
 #include "hashing.h"
 #include "parsing.h"
+#include "eval.h"
 
 namespace engine {
 
@@ -33,6 +34,8 @@ public:
     Piece board[SQUARECOUNT];
     Colour colToMove;
     State* st;
+    int material[PHASENB][COLOURNB];
+    int psqtv[PHASENB][COLOURNB];
 
 
 public:
@@ -115,6 +118,13 @@ inline void Board::putPiece(Piece pc, Square sq) {
     pieceBB[pc] |= place;
     colourBB[col] |= place;
     allPieces |= place;
+
+    PieceType pt = typeOf(pc);
+    Square mirrored = mirrorSquareIfBlack(sq, col);
+    material[PHASEMG][col] += W.material[PHASEMG][pt];
+    material[PHASEEG][col] += W.material[PHASEEG][pt];
+    psqtv[PHASEMG][col] += W.psqt[PHASEMG][pt][mirrored];
+    psqtv[PHASEEG][col] += W.psqt[PHASEEG][pt][mirrored];
 }
 
 inline void Board::removePiece(Square sq) {
@@ -125,6 +135,13 @@ inline void Board::removePiece(Square sq) {
     colourBB[col] ^= place;
     allPieces ^= place;
     board[sq] = EMPTY;
+
+    PieceType pt = typeOf(pc);
+    Square mirrored = mirrorSquareIfBlack(sq, col);
+    material[PHASEMG][col] -= W.material[PHASEMG][pt];
+    material[PHASEEG][col] -= W.material[PHASEEG][pt];
+    psqtv[PHASEMG][col] -= W.psqt[PHASEMG][pt][mirrored];
+    psqtv[PHASEEG][col] -= W.psqt[PHASEEG][pt][mirrored];
 }
 
 inline void Board::movePiece(Square from, Square to) {
@@ -136,5 +153,13 @@ inline void Board::movePiece(Square from, Square to) {
     allPieces ^= fromTo;
     board[from] = EMPTY;
     board[to] = pc; 
+
+    PieceType pt = typeOf(pc);
+    Square mirroredFrom = mirrorSquareIfBlack(from, col);
+    Square mirroredTo = mirrorSquareIfBlack(to, col);
+    psqtv[PHASEMG][col] -= W.psqt[PHASEMG][pt][mirroredFrom];
+    psqtv[PHASEEG][col] -= W.psqt[PHASEEG][pt][mirroredFrom];
+    psqtv[PHASEMG][col] += W.psqt[PHASEMG][pt][mirroredTo];
+    psqtv[PHASEEG][col] += W.psqt[PHASEEG][pt][mirroredTo];
 }
 }

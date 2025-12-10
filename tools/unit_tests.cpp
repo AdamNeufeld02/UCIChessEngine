@@ -28,6 +28,7 @@ static char pieceToChar(engine::Piece p) {
         case engine::QUEEN:  c = 'Q'; break;
         case engine::KING:   c = 'K'; break;
         case engine::NONE:   c = '.'; break;
+        default:             c = '.'; break;
     }
     return (col == engine::WHITE ? c : tolower(c));
 }
