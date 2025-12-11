@@ -24,6 +24,8 @@ add_library(engine_core
     src/engine/eval.cpp
     src/engine/engine.cpp
     src/engine/uci.cpp
+    src/engine/threads.cpp
+    src/engine/search.cpp
 )
 
 target_include_directories(engine_core

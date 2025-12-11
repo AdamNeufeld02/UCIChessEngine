@@ -1,6 +1,7 @@
 #include "engine/uci.h"
 #include "engine/bitboards.h"
 #include "engine/eval.h"
+#include "engine/search.h"
 
 #include <iostream>
 #include <sstream>
@@ -13,6 +14,18 @@ constexpr auto StartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 
 UCIEngine::UCIEngine() {
     bb::init();
     init_eval_weights_default();
+
+    engine.setBestMoveCallback(
+        [this](Move best, int score, int depth, Move* pv) {
+            sendBestMove(best);
+        });
+
+    engine.setInfoCallback(
+        [this](const SearchInfo& info) {
+            printInfo(info);
+        });
+
+    engine.setThreads(1);
 }
 
 void UCIEngine::loop() {
@@ -141,6 +154,43 @@ void UCIEngine::cmdStop() {
 
 void UCIEngine::cmdQuit() {
     std::exit(0);
+}
+
+void UCIEngine::printInfo(const SearchInfo& info) {
+    std::cout << "info";
+
+    if (info.depth > 0)
+        std::cout << " depth " << info.depth;
+    if (info.seldepth > 0)
+        std::cout << " seldepth " << info.seldepth;
+
+    if (info.isMate) {
+        std::cout << " score mate " << info.score;
+    } else {
+        std::cout << " score cp " << info.score;
+    }
+
+    if (info.timeMs > 0)
+        std::cout << " time " << info.timeMs;
+    if (info.nodes > 0)
+        std::cout << " nodes " << info.nodes;
+    if (info.nps > 0)
+        std::cout << " nps " << info.nps;
+
+    if (!info.pv.empty()) {
+        std::cout << " pv";
+        for (Move m : info.pv) {
+            std::cout << " " << engine.moveToUciString(m);
+        }
+    }
+
+    std::cout << "\n";
+    std::cout.flush();
+}
+
+void UCIEngine::sendBestMove(Move best) {
+    std::cout << "bestmove " << engine.moveToUciString(best) << "\n";
+    std::cout.flush();
 }
 
 }

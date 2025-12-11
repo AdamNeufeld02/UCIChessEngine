@@ -18,12 +18,16 @@ void Engine::setPosition(std::string fen, std::vector<std::string>& moves) {
     }
 }
 
+void Engine::setThreads(size_t n) {
+    threadPool.set(n);
+}
+
 void Engine::go(SearchLimits sl) {
-    return;
+    threadPool.startSearching(board, sl);
 }
 
 void Engine::stopSearch() {
-    return;
+    threadPool.stop = true;
 }
 
 void Engine::clearSearch() {

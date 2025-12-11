@@ -34,6 +34,8 @@ private:
     Move parseMove(const std::string& uciMove) const;
     void parsePosition(std::istringstream& iss);
     std::vector<Move> parseMovesFromStream(std::istringstream& iss);
+    void printInfo(const SearchInfo& si);
+    void sendBestMove(Move best);
     
 };
 

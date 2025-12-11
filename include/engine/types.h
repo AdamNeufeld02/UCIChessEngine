@@ -4,6 +4,7 @@
 namespace engine{
 
 constexpr int MAXMOVES = 256;
+constexpr int MAXDEPTH = 256;
 
 typedef uint64_t Bitboard;
 
