@@ -22,6 +22,8 @@ add_library(engine_core
     src/engine/bitboards.cpp
     src/engine/hashing.cpp
     src/engine/eval.cpp
+    src/engine/engine.cpp
+    src/engine/uci.cpp
 )
 
 target_include_directories(engine_core

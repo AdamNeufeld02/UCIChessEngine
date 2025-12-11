@@ -3,6 +3,8 @@
 
 namespace engine{
 
+constexpr int MAXMOVES = 256;
+
 typedef uint64_t Bitboard;
 
 enum Colour {
@@ -53,6 +55,17 @@ enum Direction {
     SOUTHEAST = SOUTH + EAST,
     NORTHWEST = NORTH + WEST,
     SOUTHWEST = SOUTH + WEST
+};
+
+struct SearchLimits {
+    int depth       = 0;
+    int movetime_ms = 0;
+    int wtime_ms    = 0;
+    int btime_ms    = 0;
+    int winc_ms     = 0;
+    int binc_ms     = 0;
+    int movestogo   = 0;
+    bool infinite   = false;
 };
 
 inline Square operator+(Square sq, Direction dir) {

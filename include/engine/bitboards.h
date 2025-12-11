@@ -107,6 +107,14 @@ inline bool moreThanOne(Bitboard bb) {
     return bb & (bb - 1);
 }
 
+inline int fileOf(int sq) {
+    return sq & 7;
+}
+
+inline int rankOf(int sq) {
+    return sq >> 3;
+}
+
 namespace bb {
     void init();
     void initMagicBitboards();

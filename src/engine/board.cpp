@@ -19,6 +19,13 @@ void Board::initFields() {
     allPieces = (Bitboard)0ULL;
     colToMove = WHITE;
     st = nullptr;
+
+    for (int i = 0; i < PHASENB; i ++) {
+        for (int j = 0; j < COLOURNB; j++) {
+            material[i][j] = 0;
+            psqtv[i][j] = 0;
+        }
+    }
 }
 
 void Board::initRootState(State* rootState) {

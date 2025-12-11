@@ -2,5 +2,6 @@
 #include "engine/uci.h"
 
 int main() {
-    return 0;
+    engine::UCIEngine engine = engine::UCIEngine();
+    engine.loop();
 }
