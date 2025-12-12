@@ -38,6 +38,8 @@ void Board::initRootState(State* rootState) {
     rootState->epSquare = NOSQUARE;
     rootState->halfmoveClock = 0;
     rootState->fullmoveNumber = 1;
+    rootState->movesFromNull = 0;
+    rootState->repetitionCount = 0;
     rootState->previous = nullptr;
 }
 
@@ -145,6 +147,7 @@ void Board::makeMove(Move move, State* newState) {
 
     newState->captured = capt;
     newState->halfmoveClock += 1;
+    newState->movesFromNull += 1;
     if (us == BLACK) {
         newState->fullmoveNumber += 1;
     }
@@ -206,6 +209,23 @@ void Board::makeMove(Move move, State* newState) {
     st = newState;
 
     updateChecksAndPins(colToMove);
+
+    st->repetitionCount = 0;
+    int end = std::min(st->halfmoveClock, st->movesFromNull);
+    if (end >= 4)
+    {
+        State* stp = st->previous->previous;
+        for (int i = 4; i <= end; i += 2)
+        {
+            stp = stp->previous->previous;
+            if (stp->boardKey == st->boardKey)
+            {
+                st->repetitionCount = stp->repetitionCount + 1;
+                break;
+            }
+        }
+    }
+
 }
 
 void Board::undoMove(Move move) {

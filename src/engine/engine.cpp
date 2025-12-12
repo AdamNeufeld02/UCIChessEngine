@@ -10,12 +10,12 @@ Engine::Engine() {
 void Engine::setPosition(std::string fen, std::vector<std::string>& moves) {
     states = std::make_unique<std::deque<State>>(1);
     board.fenToBoard(fen, &states->back());
-
     for (const auto& ms : moves) {
         Move m = uciStringToMove(ms);
+        if (m == NOMOVE) return;
         states->emplace_back();
         board.makeMove(m, &states->back());
-    }
+    }  
 }
 
 void Engine::setThreads(size_t n) {
@@ -31,7 +31,7 @@ void Engine::stopSearch() {
 }
 
 void Engine::clearSearch() {
-    return;
+    threadPool.clearThreads();
 }
 
 Move Engine::uciStringToMove(std::string move) {
@@ -45,6 +45,8 @@ Move Engine::uciStringToMove(std::string move) {
             return moveList[i];
         }
     }
+
+    return NOMOVE;
 }
 
 std::string Engine::squareUciString(Square sq) {

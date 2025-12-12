@@ -1,35 +1,205 @@
 #include "engine/search.h"
 #include "engine/threads.h"
-#include <chrono>
+#include "engine/movegen.h"
 
 namespace engine {
 
-Worker::Worker(SharedState& st)
+Worker::Worker(SharedState& st, size_t idx)
     : threads(st.threads)
-    , board()
+    , rootBoard()
     , bestScore(0)
     , bestDepth(0)
+    , threadID(idx)
 {
-    std::fill(std::begin(pv), std::end(pv), Move(0));
+    std::fill(std::begin(bestPv), std::end(bestPv), NOMOVE);
+}
+
+void Worker::setRoot(const Board& root, const SearchLimits& l) {
+    rootBoard   = root;
+    limits  = l;
 }
 
 void Worker::startSearching() {
-    int iter = 0;
-    while(true) {
-        if (threads.stop) {
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(2)); 
-        iter++;
-        SearchInfo si;
-        si.depth = iter;
-        threads.fireInfo(si);
+    iterativeDeepening();
+
+    if (threadID == 0) {
+        // For now just return information on self search don't consider other threads
+        threads.fireBestMove(bestPv[0], bestScore, bestDepth, bestPv);
     }
-    threads.fireBestMove(makeMoveBasic(E2, E4), 100, 2, pv);
 }
 
 void Worker::clear() {
     return;
+}
+
+void Worker::iterativeDeepening() {
+    SearchStack ss[MAXPLY];
+    Move rootMoves[MAXMOVES];
+    Move rootPv[MAXPLY];
+    Move pv[MAXPLY];
+    ss->pv = rootPv;
+    (ss+1)->pv = pv;
+    nodesSearched = 0;
+    startTime = std::chrono::steady_clock::now();
+
+    for (int i = 0; i < MAXPLY; i++) {
+        ss[i].ply = i;
+        bestPv[i] = NOMOVE;
+    }
+
+    Move* rootEnd = generate<GEN_LEGAL>(rootBoard, rootMoves);
+    State st;
+
+    Move best;
+    Value topScore;
+    Value currValue;
+
+    for (int depth = 1; depth < MAXPLY; depth++) {
+        best = NOMOVE;
+        topScore = -VALUEINFINITE;
+        currValue = 0;
+        
+        for (Move* m = rootMoves; m != rootEnd; m++) {
+            rootBoard.makeMove(*m, &st);
+            currValue = -search(ss+1, rootBoard, topScore, VALUEINFINITE, depth - 1);
+            rootBoard.undoMove(*m);
+
+            if (threads.stop) return;
+
+            if (currValue > topScore) {
+                topScore = currValue;
+                best = *m;
+                updatePV(ss->pv, *m, (ss+1)->pv);
+            }
+        }
+        
+        for (int i = 0; i < depth; i++) {
+            bestPv[i] = ss->pv[i];
+        }
+        bestScore = topScore;
+        bestDepth = depth;
+
+        auto now = std::chrono::steady_clock::now();
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
+        if (elapsedMs <= 0) elapsedMs = 1;
+        uint64_t nps = nodesSearched * 1000ULL / static_cast<uint64_t>(elapsedMs);
+
+        SearchInfo si;
+        si.depth = bestDepth;
+        si.score = bestScore;
+        si.pv = bestPv;
+        si.nodes = nodesSearched;
+        si.nps = nps;
+
+        threads.fireInfo(si);
+
+        if (limits.depth > 0 && limits.depth <= depth) return;
+    }
+    
+}
+
+int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth) {
+    nodesSearched++;
+    Move moves[MAXMOVES];
+    Move pv[MAXPLY];
+    Value topScore = -VALUEINFINITE;
+    Value currValue = 0;
+
+    (ss+1)->pv = pv;
+    int movesSearched = 0;
+
+    if (board.isDraw() || board.isRepetitionDraw()) return VALUEDRAW;
+    if (depth <= 0) return qsearch(ss+1, board, alpha, beta);
+
+    Move* end = generate<GEN_LEGAL>(board, moves);
+    State st;
+
+    for (Move* m = moves; m != end; m++) {
+            board.makeMove(*m, &st);
+            currValue = -search(ss+1, board, -beta, -alpha, depth - 1);
+            board.undoMove(*m);
+
+            if (threads.stop) return 0;
+
+            if (currValue >= beta) {
+                return currValue;
+            }
+
+            if (currValue > topScore) {
+                topScore = currValue;
+                if (topScore > alpha) {
+                    alpha = topScore;
+                    updatePV(ss->pv, *m, (ss+1)->pv);
+                }
+            }
+            movesSearched++;
+        }
+    
+    if (movesSearched==0) {
+        if (board.checkers()) {
+            return -VALUEINFINITE + ss->ply;
+        } else {
+            return VALUEDRAW;
+        }
+    } 
+    return topScore;
+}
+
+int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
+    nodesSearched++;
+
+    if (board.isDraw() || board.isRepetitionDraw()) return VALUEDRAW;
+
+    Value standPat = evaluate(board);
+    if (standPat >= beta) {
+        return beta;
+    }
+
+    if (standPat > alpha) {
+        alpha = standPat;
+    }
+
+    Move moves[MAXMOVES];
+    Value topScore = standPat;
+    Value currValue = 0;
+
+    int movesSearched = 0;
+
+    Move* end;
+
+    if (board.checkers()) {
+        end = generate<GEN_EVASIONS>(board, moves);
+    } else {
+        end = generate<GEN_CAPTURES>(board, moves);
+    }
+    State st;
+    
+    for (Move* m = moves; m != end; m++) {
+        if (!board.legalMove(*m)) continue;
+        board.makeMove(*m, &st);
+        currValue = -qsearch(ss+1, board, -beta, -alpha);
+        board.undoMove(*m);
+
+        if (threads.stop) return 0;
+
+        if (currValue >= beta) {
+            return currValue;
+        }
+
+        if (currValue >= topScore) {
+            topScore = currValue;
+            if (topScore >= alpha) {
+                alpha = topScore;
+            }
+        }
+    }
+    return topScore;
+}
+
+void Worker::updatePV(Move* pv, Move move, Move* childPv) {
+    for (*pv++ = move; childPv && *childPv != NOMOVE; )
+        *pv++ = *childPv++;
+    *pv = NOMOVE;
 }
 
 }

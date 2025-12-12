@@ -147,7 +147,7 @@ Weights W;
 
 static void copy_psqt(int phase, PieceType pt, const int src[64]) {
     for (int sq = 0; sq < SQUARECOUNT; ++sq) {
-        W.psqt[phase][pt][sq] = src[sq];
+        W.psqt[phase][pt][sq] = src[mirrorSquareIfBlack(Square(sq), BLACK)];
     }
 }
 
@@ -186,8 +186,8 @@ bool load_eval_weights_from_file(const std::string& path) {
     return false;
 }
 
-int evaluate(Board& board) {
-    Colour sideToMove = board.sideToMove();
+Value evaluate(Board& board) {
+    Colour sideToMove = board.sideToMove();   
     int gamePhase = 0;
     gamePhase += popcount(board.pieces(WHITE, KNIGHT) | board.pieces(BLACK, KNIGHT)) * gamePhaseWeightings[KNIGHT];
     gamePhase += popcount(board.pieces(WHITE, BISHOP) | board.pieces(BLACK, BISHOP)) * gamePhaseWeightings[BISHOP];

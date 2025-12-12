@@ -19,10 +19,12 @@ struct State{
     Square epSquare;
     int halfmoveClock;
     int fullmoveNumber;
+    int movesFromNull;
 
     Piece captured;
     Bitboard blockersForKing[COLOURNB];
     Bitboard checkers;
+    int repetitionCount;
     State* previous;
 };
 
@@ -57,6 +59,9 @@ public:
     void calcZobristHashFromScratch();
 
     bool legalMove(Move move) const;
+
+    bool isDraw() const;
+    bool isRepetitionDraw() const;
 
     // Accessors
     Piece pieceOn(Square sq) const;
@@ -111,6 +116,14 @@ inline Square Board::epSquare() const {
     return st->epSquare;
 }
 
+inline bool Board::isDraw() const {
+    return st->halfmoveClock > 99;
+}
+
+inline bool Board::isRepetitionDraw() const {
+    return st->repetitionCount > 2;
+}
+
 inline void Board::putPiece(Piece pc, Square sq) {
     Bitboard place = bit(sq);
     Colour col = colourOf(pc);
@@ -157,6 +170,7 @@ inline void Board::movePiece(Square from, Square to) {
     PieceType pt = typeOf(pc);
     Square mirroredFrom = mirrorSquareIfBlack(from, col);
     Square mirroredTo = mirrorSquareIfBlack(to, col);
+
     psqtv[PHASEMG][col] -= W.psqt[PHASEMG][pt][mirroredFrom];
     psqtv[PHASEEG][col] -= W.psqt[PHASEEG][pt][mirroredFrom];
     psqtv[PHASEMG][col] += W.psqt[PHASEMG][pt][mirroredTo];

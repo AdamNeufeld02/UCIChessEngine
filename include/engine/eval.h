@@ -24,6 +24,6 @@ inline Square mirrorSquareIfBlack(Square sq, Colour c) {
     return Square(sq ^ mask);
 }
 
-int evaluate(Board& board);
+Value evaluate(Board& board);
 
 }

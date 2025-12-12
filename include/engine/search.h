@@ -1,7 +1,7 @@
 #pragma once
 #include "board.h"
 #include <vector>
-
+#include <chrono>
 
 namespace engine {
 
@@ -20,24 +20,42 @@ struct SearchInfo {
     std::uint64_t nodes   = 0;
     std::uint64_t timeMs  = 0;
     std::uint64_t nps     = 0;
-    std::vector<Move> pv;
+    Move* pv;
+};
+
+struct SearchStack {
+    int ply;
+    Move* pv;
+    Move current;
+    bool didNull;
 };
 
 class Worker {
 public:
-    Worker(SharedState& st);
+    Worker(SharedState& st, size_t idx);
 
     void startSearching();
+    void setRoot(const Board& root, const SearchLimits& l);
     void clear();
+
+    void iterativeDeepening();
+    Value search(SearchStack* ss, Board& board, Value alpha, Value beta, int depth);
+    Value qsearch(SearchStack* ss, Board& board, Value alpha, Value beta);
 
 
 private:
-    ThreadPool& threads;
-    Board board;
 
-    Move pv[MAXDEPTH];
-    int bestScore;
+    void updatePV(Move* pv, Move move, Move* childPv);
+
+    ThreadPool& threads;
+    Board rootBoard;
+    SearchLimits limits;
+    size_t threadID;
+    Move bestPv[MAXPLY];
+    Value bestScore;
     int bestDepth;
+    int nodesSearched;
+    std::chrono::steady_clock::time_point startTime;
 };
 
 }

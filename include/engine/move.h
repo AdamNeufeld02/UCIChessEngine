@@ -5,7 +5,11 @@
 
 namespace engine {
 
-typedef uint16_t Move;
+//typedef uint16_t Move;
+
+enum Move : uint16_t {
+    NOMOVE
+};
 
 enum Flags : uint8_t {
     NOFLAG    = 0,

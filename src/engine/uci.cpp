@@ -177,10 +177,13 @@ void UCIEngine::printInfo(const SearchInfo& info) {
     if (info.nps > 0)
         std::cout << " nps " << info.nps;
 
-    if (!info.pv.empty()) {
+    if (info.pv[0] != NOMOVE) {
         std::cout << " pv";
-        for (Move m : info.pv) {
-            std::cout << " " << engine.moveToUciString(m);
+        for (int i = 0; i < MAXPLY; i++) {
+            if (info.pv[i] == NOMOVE) {
+                break;
+            }
+            std::cout << " " << engine.moveToUciString(info.pv[i]);
         }
     }
 

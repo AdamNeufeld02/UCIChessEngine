@@ -6,7 +6,7 @@ namespace engine {
 Thread::Thread(SharedState& st, size_t n, size_t total)
     : idx(n)
     , nThreads(total)
-    , worker(st)
+    , worker(st, n)
 {
     searching = false;
     exit = false;
@@ -39,13 +39,20 @@ void Thread::idleLoop() {
         }
         lk.lock();
         searching = false;
+        cv.notify_all();
     }
 }
 
-void Thread::startSearching() {
+void Thread::startSearching(const Board& board, const SearchLimits sl) {
     std::lock_guard<std::mutex> lk(mutex);
+    worker.setRoot(board, sl);
     searching = true;
     cv.notify_one();
+}
+
+void Thread::waitForSearch() {
+    std::unique_lock<std::mutex> lk(mutex);
+    cv.wait(lk, [&]{ return !searching; });
 }
 
 void Thread::clearWorker() {
@@ -68,10 +75,16 @@ void ThreadPool::set(size_t n) {
     }
 }
 
-void ThreadPool::startSearching(Board& board, SearchLimits sl) {
+void ThreadPool::startSearching(const Board& board, const SearchLimits sl) {
     stop = false;
     for (auto& t : threads) {
-        t->startSearching();
+        t->startSearching(board, sl);
+    }
+}
+
+void ThreadPool::waitForAllThreads() {
+    for (auto& t : threads) {
+        t->waitForSearch();
     }
 }
 

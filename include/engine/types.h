@@ -4,7 +4,15 @@
 namespace engine{
 
 constexpr int MAXMOVES = 256;
-constexpr int MAXDEPTH = 256;
+constexpr int MAXPLY = 256;
+
+typedef int Value;
+
+constexpr Value VALUEDRAW = 0;
+constexpr Value VALUEINFINITE = 20001;
+constexpr Value VALUEMATE = 20000;
+constexpr Value VALUEMATEINMAX = VALUEMATE - MAXPLY;
+
 
 typedef uint64_t Bitboard;
 

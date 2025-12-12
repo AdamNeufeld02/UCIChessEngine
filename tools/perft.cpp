@@ -9,51 +9,6 @@
 #include "engine/move.h"
 #include "engine/movegen.h"
 
-static char pieceToChar(engine::Piece p) {
-    if (p == engine::EMPTY) return '.';
-
-    engine::PieceType pt = typeOf(p);
-    engine::Colour col   = colourOf(p);
-
-    char c = '?';
-    switch (pt) {
-        case engine::PAWN:   c = 'P'; break;
-        case engine::KNIGHT: c = 'N'; break;
-        case engine::BISHOP: c = 'B'; break;
-        case engine::ROOK:   c = 'R'; break;
-        case engine::QUEEN:  c = 'Q'; break;
-        case engine::KING:   c = 'K'; break;
-        case engine::NONE:   c = '.'; break;
-    }
-    return (col == engine::WHITE ? c : tolower(c));
-}
-static void printBoard(const engine::Board& b) {
-    std::cout << "\n============== CURRENT BOARD ==============\n\n";
-
-    for (int rank = 7; rank >= 0; --rank) {
-        std::cout << (rank + 1) << "  ";
-        for (int file = 0; file < 8; ++file) {
-            engine::Square sq = static_cast<engine::Square>(rank * 8 + file);
-            engine::Piece p   = b.pieceOn(sq);
-            std::cout << pieceToChar(p) << " ";
-        }
-        std::cout << "\n";
-    }
-
-    std::cout << "\n   a b c d e f g h\n";
-
-    std::cout << "\nSide to move: "
-              << (b.sideToMove() == engine::WHITE ? "White" : "Black") << "\n";
-
-    std::cout << "All pieces BB: 0x" << std::hex << b.allPieces << std::dec << "\n";
-    std::cout << "White pieces BB: 0x" << std::hex << b.colourBB[engine::WHITE] << std::dec << "\n";
-    std::cout << "Black pieces BB: 0x" << std::hex << b.colourBB[engine::BLACK] << std::dec << "\n";
-
-    std::cout << "White king square: " << int(b.kingSquare(engine::WHITE)) << "\n";
-    std::cout << "Black king square: " << int(b.kingSquare(engine::BLACK)) << "\n";
-
-    std::cout << "\n===========================================\n\n";
-}
 namespace engine {
 
 static std::string squareToString(Square sq) {

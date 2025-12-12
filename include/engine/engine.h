@@ -19,6 +19,7 @@ public:
     void setPosition(std::string fen, std::vector<std::string>& moves);
     void stopSearch();
     void clearSearch();
+    void readyUp();
 
     using BestMoveCallback = ThreadPool::BestMoveCallback;
     using InfoCallback     = ThreadPool::InfoCallback;

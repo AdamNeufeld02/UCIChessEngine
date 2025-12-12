@@ -17,8 +17,10 @@ public:
     ~Thread();
 
     void idleLoop();
-    void startSearching();
+    void startSearching(const Board& board, const SearchLimits sl);
     void clearWorker();
+
+    void waitForSearch();
 
 
 private:
@@ -38,12 +40,12 @@ private:
 class ThreadPool {
 public:
     ThreadPool();
-    void startSearching(Board& board, SearchLimits sl);
+    void startSearching(const Board& board, const SearchLimits sl);
     void clearThreads();
     Thread* getBestThread();
     size_t numThreads();
-    void waitForSearchFinished();
     void set(size_t nThreads);
+    void waitForAllThreads();
 
     // === Callbacks ===
     using BestMoveCallback = std::function<void(Move best, int score, int depth, Move* pv)>;
