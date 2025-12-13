@@ -1,6 +1,7 @@
 #include "engine/search.h"
 #include "engine/threads.h"
-#include "engine/movegen.h"
+#include "engine/moveselector.h"
+
 
 namespace engine {
 
@@ -34,7 +35,6 @@ void Worker::clear() {
 
 void Worker::iterativeDeepening() {
     SearchStack ss[MAXPLY];
-    Move rootMoves[MAXMOVES];
     Move rootPv[MAXPLY];
     Move pv[MAXPLY];
     ss->pv = rootPv;
@@ -47,30 +47,32 @@ void Worker::iterativeDeepening() {
         bestPv[i] = NOMOVE;
     }
 
-    Move* rootEnd = generate<GEN_LEGAL>(rootBoard, rootMoves);
     State st;
 
     Move best;
     Value topScore;
     Value currValue;
+    Move move;
 
     for (int depth = 1; depth < MAXPLY; depth++) {
         best = NOMOVE;
         topScore = -VALUEINFINITE;
         currValue = 0;
+        MoveSelector ms = MoveSelector(bestPv[0], rootBoard, true);
         
-        for (Move* m = rootMoves; m != rootEnd; m++) {
+        while ((move = ms.selectMove()) != NOMOVE) {
+            if (!rootBoard.legalMove(move)) continue;
             (ss+1)->pv[0] = NOMOVE;
-            rootBoard.makeMove(*m, &st);
+            rootBoard.makeMove(move, &st);
             currValue = -search(ss+1, rootBoard, topScore, VALUEINFINITE, depth - 1);
-            rootBoard.undoMove(*m);
+            rootBoard.undoMove(move);
 
             if (threads.stop) return;
 
             if (currValue > topScore) {
                 topScore = currValue;
-                best = *m;
-                updatePV(ss->pv, *m, (ss+1)->pv);
+                best = move;
+                updatePV(ss->pv, move, (ss+1)->pv);
             }
         }
         
@@ -112,30 +114,32 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
     if (board.isDraw() || board.isRepetitionDraw()) return VALUEDRAW;
     if (depth <= 0) return qsearch(ss+1, board, alpha, beta);
 
-    Move* end = generate<GEN_LEGAL>(board, moves);
+    MoveSelector ms = MoveSelector(NOMOVE, board, true);
     State st;
+    Move move;
 
-    for (Move* m = moves; m != end; m++) {
-            (ss+1)->pv[0] = NOMOVE;
-            board.makeMove(*m, &st);
-            currValue = -search(ss+1, board, -beta, -alpha, depth - 1);
-            board.undoMove(*m);
+    while ((move = ms.selectMove()) != NOMOVE) {
+        if (!rootBoard.legalMove(move)) continue;
+        (ss+1)->pv[0] = NOMOVE;
+        board.makeMove(move, &st);
+        currValue = -search(ss+1, board, -beta, -alpha, depth - 1);
+        board.undoMove(move);
 
-            if (threads.stop) return 0;
+        if (threads.stop) return 0;
 
-            if (currValue >= beta) {
-                return currValue;
-            }
-
-            if (currValue > topScore) {
-                topScore = currValue;
-                if (topScore > alpha) {
-                    alpha = topScore;
-                    updatePV(ss->pv, *m, (ss+1)->pv);
-                }
-            }
-            movesSearched++;
+        if (currValue >= beta) {
+            return currValue;
         }
+
+        if (currValue > topScore) {
+            topScore = currValue;
+            if (topScore > alpha) {
+                alpha = topScore;
+                updatePV(ss->pv, move, (ss+1)->pv);
+            }
+        }
+        movesSearched++;
+    }
     
     if (movesSearched==0) {
         if (board.checkers()) {
@@ -166,28 +170,22 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
         topScore = standPat;
     }  
 
-    Move moves[MAXMOVES];
     Value currValue = 0;
     int movesSearched = 0;
-
-    Move* end;
-
-    if (board.checkers()) {
-        end = generate<GEN_EVASIONS>(board, moves);
-    } else {
-        end = generate<GEN_CAPTURES>(board, moves);
-    }
+    MoveSelector ms = MoveSelector(NOMOVE, board, false);
     State st;
-    
-    for (Move* m = moves; m != end; m++) {
+    Move move;
 
-        if ((!isLoss(topScore) && !board.isCapture(*m)) || !board.legalMove(*m)) continue;
+    
+    while ((move = ms.selectMove()) != NOMOVE) {
+
+        if ((!isLoss(topScore) && !board.isCapture(move)) || !board.legalMove(move)) continue;
         
         movesSearched++;
    
-        board.makeMove(*m, &st);
+        board.makeMove(move, &st);
         currValue = -qsearch(ss+1, board, -beta, -alpha);
-        board.undoMove(*m);
+        board.undoMove(move);
 
         if (threads.stop) return 0;
 

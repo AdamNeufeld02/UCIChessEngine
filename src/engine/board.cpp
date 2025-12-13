@@ -1,5 +1,6 @@
 #include <string>
 #include "engine/board.h"
+#include "engine/movegen.h"
 
 namespace engine{
 
@@ -315,6 +316,61 @@ void Board::updateChecksAndPins(Colour col) {
     st->checkers = getAttackers(kingSquare(col), ~col, allPieces);
     updateKingBlockers(WHITE);
     updateKingBlockers(BLACK);
+}
+
+bool Board::pseudoLegalMove(Move move) const {
+    Colour us = colToMove;
+    Square from = fromSq(move);
+    Square to = toSq(move);
+    Flags flag = moveFlag(move);
+    Piece pc = board[from];
+
+    if (flag != NOFLAG) {
+        if (checkers()) {
+            return MoveList<GEN_EVASIONS>(*this).contains(move);
+        } else {
+            return MoveList<GEN_PSEUDO_LEGAL>(*this).contains(move);
+        }
+    }
+
+    if (pc == EMPTY || colourOf(pc) != us) return false;
+
+    if (pieces(us) & bit(to)) return false;
+
+    if (typeOf(pc) == PAWN) {
+        if((Rank1BB | Rank8BB) & bit(to)) return false;
+
+        Direction up = us == WHITE ? NORTH : SOUTH;
+        Bitboard rank2BB = us == WHITE ? Rank2BB : Rank7BB;
+
+        bool isCapture = bool(pawnAttacks[us][from] & pieces(~us) & bit(to));
+        bool isSinglePush = (from + up == to) && (board[to] == EMPTY);
+        bool isDoublePush = (from + up + up == to) && (bit(from) & rank2BB) && 
+                            (board[to - up] == EMPTY) && (board[to] == EMPTY);
+
+        if (!(isCapture || isSinglePush || isDoublePush)) {
+            return false;
+        }
+
+    } else if (!(genAttacksBB(typeOf(pc), from, pieces()) & bit(to))) {
+        return false;
+    }
+
+    if (checkers()) {
+        if (typeOf(pc) != KING) {
+            if (moreThanOne(checkers())) {
+                return false;
+            }
+
+            if (!(betweenBB[kingSquare(us)][lsb(checkers())] & bit(to))) {
+                return false;
+            }
+        } else if (getAttackers(to, ~us, pieces() ^ bit(from))) {
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 bool Board::legalMove(Move move) const {

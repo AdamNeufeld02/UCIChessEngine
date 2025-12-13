@@ -3,17 +3,17 @@
 namespace engine {
 
 template<GenType Type, Direction Dir, bool Capt>
-Move* generatePromotions(Move* moveList, Square to) {
+ScoredMove* generatePromotions(ScoredMove* moveList, Square to) {
     constexpr bool allPromos = (Type == GEN_EVASIONS) || (Type == GEN_PSEUDO_LEGAL);
 
     if constexpr (Type == GEN_CAPTURES || allPromos) {
-        *moveList++ = makePromoMove(to - Dir, to, QUEEN);
+        *moveList++ = ScoredMove{ makePromoMove(to - Dir, to, QUEEN) };
     }
 
     if constexpr ((Type == GEN_CAPTURES && Capt) || (Type == GEN_QUIETS && !Capt) || allPromos) {
-        *moveList++ = makePromoMove(to - Dir, to, ROOK);
-        *moveList++ = makePromoMove(to - Dir, to, BISHOP);
-        *moveList++ = makePromoMove(to - Dir, to, KNIGHT);
+        *moveList++ = ScoredMove{ makePromoMove(to - Dir, to, ROOK) };
+        *moveList++ = ScoredMove{ makePromoMove(to - Dir, to, BISHOP) };
+        *moveList++ = ScoredMove{ makePromoMove(to - Dir, to, KNIGHT) };
     }
 
     return moveList;
@@ -21,7 +21,7 @@ Move* generatePromotions(Move* moveList, Square to) {
 
 
 template<Colour Col, GenType Type>
-Move* generatePawnMoves(const Board& board, Move* moveList, Bitboard targets) {
+ScoredMove* generatePawnMoves(const Board& board, ScoredMove* moveList, Bitboard targets) {
     constexpr Direction up = Col == WHITE ? NORTH : SOUTH;
     constexpr Direction upRight = Col == WHITE ? NORTHEAST : SOUTHWEST;
     constexpr Direction upLeft = Col == WHITE ? NORTHWEST : SOUTHEAST;
@@ -46,12 +46,12 @@ Move* generatePawnMoves(const Board& board, Move* moveList, Bitboard targets) {
 
         while (singlePush) {
             Square to = pop_lsb(singlePush);
-            *moveList++ = makeMoveBasic(to - up, to);
+            *moveList++ = ScoredMove{ makeMoveBasic(to - up, to) };
         }
 
         while (doublePush) {
             Square to = pop_lsb(doublePush);
-            *moveList++ = makeMoveBasic(to - up - up, to);
+            *moveList++ = ScoredMove{ makeMoveBasic(to - up - up, to) };
         }
     }
 
@@ -86,19 +86,19 @@ Move* generatePawnMoves(const Board& board, Move* moveList, Bitboard targets) {
 
         while (captRight) {
             Square to = pop_lsb(captRight);
-            *moveList++ = makeMoveBasic(to - upRight, to);
+            *moveList++ = ScoredMove{ makeMoveBasic(to - upRight, to) };
         }
 
         while (captLeft) {
             Square to = pop_lsb(captLeft);
-            *moveList++ = makeMoveBasic(to - upLeft, to);
+            *moveList++ = ScoredMove{ makeMoveBasic(to - upLeft, to) };
         }
 
         if (board.epSquare() != NOSQUARE) {
             Bitboard enPassant = pawnAttacks[~Col][board.epSquare()] & pawnsNotOn7;
 
             while (enPassant) {
-                *moveList++ = makeMoveWithFlag(pop_lsb(enPassant), board.epSquare(), ENPASSANT);
+                *moveList++ = ScoredMove{ makeMoveWithFlag(pop_lsb(enPassant), board.epSquare(), ENPASSANT) };
             }
         }
     }
@@ -107,7 +107,7 @@ Move* generatePawnMoves(const Board& board, Move* moveList, Bitboard targets) {
 }
 
 template<Colour Col, PieceType PT>
-Move* generateMovesByPT(const Board& board, Move* moveList, Bitboard targets) {
+ScoredMove* generateMovesByPT(const Board& board, ScoredMove* moveList, Bitboard targets) {
     Square from, to;
     Bitboard pcs = board.pieces(Col, PT);
     Bitboard occ = board.pieces();
@@ -119,14 +119,14 @@ Move* generateMovesByPT(const Board& board, Move* moveList, Bitboard targets) {
 
         while (attacks) {
             to = pop_lsb(attacks);
-            *moveList++ = makeMoveBasic(from, to);
+            *moveList++ = ScoredMove{ makeMoveBasic(from, to) };
         }
     }
     return moveList;
 }
 
 template<Colour Col, GenType Type>
-Move* generateAll(const Board& board, Move* moveList) {
+ScoredMove* generateAll(const Board& board, ScoredMove* moveList) {
     Bitboard targets;
 
     if (Type != GEN_EVASIONS || !moreThanOne(board.checkers())) {
@@ -151,10 +151,10 @@ Move* generateAll(const Board& board, Move* moveList) {
     if ((Type == GEN_QUIETS || Type == GEN_PSEUDO_LEGAL) && board.canCastle(kingSide | queenSide)) {
         Square ksq = board.kingSquare(Col);
         if (board.canCastle(kingSide) && !board.castlingBlocked(kingSide)) {
-            *moveList++ = makeMoveWithFlag(ksq, static_cast<Square>(ksq + 2), CASTLE);
+            *moveList++ = ScoredMove{ makeMoveWithFlag(ksq, static_cast<Square>(ksq + 2), CASTLE) };
         }
         if (board.canCastle(queenSide) && !board.castlingBlocked(queenSide)) {
-            *moveList++ = makeMoveWithFlag(ksq, static_cast<Square>(ksq - 2), CASTLE);
+            *moveList++ = ScoredMove{ makeMoveWithFlag(ksq, static_cast<Square>(ksq - 2), CASTLE) };
         }
     }
 
@@ -162,23 +162,23 @@ Move* generateAll(const Board& board, Move* moveList) {
 }
 
 template<GenType Type>
-Move* generate(const Board& board, Move* moveList) {
+ScoredMove* generate(const Board& board, ScoredMove* moveList) {
     Colour colToMove = board.sideToMove();
     return colToMove == WHITE ? generateAll<WHITE, Type>(board, moveList) : generateAll<BLACK, Type>(board, moveList);
 }
 
-template Move* generate<GEN_CAPTURES>(const Board&, Move*);
-template Move* generate<GEN_QUIETS>(const Board&, Move*);
-template Move* generate<GEN_EVASIONS>(const Board&, Move*);
-template Move* generate<GEN_PSEUDO_LEGAL>(const Board&, Move*);
+template ScoredMove* generate<GEN_CAPTURES>(const Board&, ScoredMove*);
+template ScoredMove* generate<GEN_QUIETS>(const Board&, ScoredMove*);
+template ScoredMove* generate<GEN_EVASIONS>(const Board&, ScoredMove*);
+template ScoredMove* generate<GEN_PSEUDO_LEGAL>(const Board&, ScoredMove*);
 
 template<>
-Move* generate<GEN_LEGAL>(const Board& board, Move* moveList) {
-    Move* curr = moveList;
+ScoredMove* generate<GEN_LEGAL>(const Board& board, ScoredMove* moveList) {
+    ScoredMove* curr = moveList;
     moveList = board.checkers() ? generate<GEN_EVASIONS>(board, moveList) : generate<GEN_PSEUDO_LEGAL>(board, moveList);
 
     while (curr != moveList) {
-        if (!board.legalMove(*curr)) {
+        if (!board.legalMove(curr->move)) {
             *curr = *(--moveList);
         } else {
             curr++;

@@ -35,14 +35,11 @@ void Engine::clearSearch() {
 }
 
 Move Engine::uciStringToMove(std::string move) {
-    Move moveList[MAXMOVES];
-    Move* end;
-    end = generate<GEN_LEGAL>(board, moveList);
-    int len = end - moveList;
+    MoveList moveList = MoveList<GEN_LEGAL>(board);
 
-    for (int i = 0; i < len; i++) {
-        if (move == moveToUciString(moveList[i])) {
-            return moveList[i];
+    for (const ScoredMove& sm : moveList) {
+        if (move == moveToUciString(sm.move)) {
+            return sm.move;
         }
     }
 

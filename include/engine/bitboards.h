@@ -171,4 +171,22 @@ inline Bitboard genAttacksBB(Square square, Bitboard occ) {
     }
 }
 
+inline Bitboard genAttacksBB(PieceType pt, Square sq, Bitboard occ) {
+    using namespace bb;
+    switch (pt) {
+    case KNIGHT:
+        return genAttacksBB<KNIGHT>(sq, occ);
+    case BISHOP:
+        return genAttacksBB<BISHOP>(sq, occ);
+    case ROOK:
+        return genAttacksBB<ROOK>(sq, occ);
+    case QUEEN:
+        return genAttacksBB<QUEEN>(sq, occ);
+    case KING:
+        return genAttacksBB<KING>(sq, occ);
+    default:
+        return 0ULL;
+    }
+}
+
 }

@@ -59,6 +59,7 @@ public:
     void calcZobristHashFromScratch();
 
     bool legalMove(Move move) const;
+    bool pseudoLegalMove(Move move) const;
     bool isCapture(Move move) const;
 
     bool isDraw() const;

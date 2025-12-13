@@ -11,6 +11,19 @@ enum Move : uint16_t {
     NOMOVE
 };
 
+struct ScoredMove {
+    Move move;
+    int score;
+
+    constexpr ScoredMove() : move(NOMOVE), score(0) {}
+    constexpr ScoredMove(Move m, int s) : move(m), score(s) {}
+    constexpr ScoredMove(Move m) : move(m), score(0) {}
+};
+
+inline bool operator<(const ScoredMove& a, const ScoredMove& b) {
+    return a.score < b.score;
+}
+
 enum Flags : uint8_t {
     NOFLAG    = 0,
     ENPASSANT = 1,

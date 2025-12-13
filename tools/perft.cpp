@@ -47,20 +47,20 @@ std::uint64_t perft(Board& board, int depth) {
         return 1;
     }
 
-    Move moves[256];
-    Move* end = generate<GEN_LEGAL>(board, moves);
+    MoveList moveList = MoveList<GEN_LEGAL>(board);
 
     if (depth == 1) {
-        return static_cast<std::uint64_t>(end - moves);
+        return moveList.size();
     }
 
     std::uint64_t nodes = 0;
 
-    for (Move* m = moves; m != end; ++m) {
+    for (const ScoredMove& sm : moveList) {
         State newState{};
-        board.makeMove(*m, &newState);
+        Move m = sm.move;
+        board.makeMove(m, &newState);
         nodes += perft(board, depth - 1);
-        board.undoMove(*m);
+        board.undoMove(m);
     }
 
     return nodes;
@@ -70,26 +70,26 @@ std::uint64_t perft(Board& board, int depth) {
 void perft_root(Board& board, int depth) {
     using clock = std::chrono::steady_clock;
 
-    Move moves[256];
-    Move* rootEnd = generate<GEN_LEGAL>(board, moves);
+    MoveList moveList = MoveList<GEN_LEGAL>(board);
 
     std::cout << "Perft results\n";
     std::cout << "  Depth: " << depth << "\n";
-    std::cout << "  Root moves: " << (rootEnd - moves) << "\n\n";
+    std::cout << "  Root moves: " << moveList.size() << "\n\n";
 
     auto start = clock::now();
 
     std::uint64_t totalNodes = 0;
 
-    for (Move* m = moves; m != rootEnd; ++m) {
+    for (const ScoredMove& sm : moveList) {
+        Move m = sm.move;
         State newState{};
-        board.makeMove(*m, &newState);
+        board.makeMove(m, &newState);
         std::uint64_t nodes = perft(board, depth - 1);
-        board.undoMove(*m);
+        board.undoMove(m);
 
         totalNodes += nodes;
 
-        std::cout << "  " << moveToUci(*m) << ": " << nodes << "\n";
+        std::cout << "  " << moveToUci(m) << ": " << nodes << "\n";
     }
 
     auto stop = clock::now();

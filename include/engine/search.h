@@ -53,9 +53,9 @@ private:
     size_t threadID;
     Move bestPv[MAXPLY];
     Value bestScore;
+    std::chrono::steady_clock::time_point startTime;
     int bestDepth;
     int nodesSearched;
-    std::chrono::steady_clock::time_point startTime;
 };
 
 }

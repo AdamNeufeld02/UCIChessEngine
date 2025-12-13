@@ -106,18 +106,18 @@ static void expectMoveSetsEqual(const std::vector<engine::Move>& a,
 template <engine::GenType Type>
 static std::vector<engine::Move> collectMovesFiltered(engine::Board& b) {
     using namespace engine;
-    Move buffer[256];
-    Move* end = generate<Type>(b, buffer);
+    MoveList moveList = MoveList<Type>(b);
 
     std::vector<Move> out;
-    out.reserve(end - buffer);
+    out.reserve(moveList.size());
 
-    for (Move* m = buffer; m != end; ++m) {
+    for (const ScoredMove& sm : moveList) {
+        Move m = sm.move;
         if constexpr (Type == GEN_LEGAL) {
-            out.push_back(*m);
+            out.push_back(m);
         } else {
-            if (b.legalMove(*m))
-                out.push_back(*m);
+            if (b.legalMove(m))
+                out.push_back(m);
         }
     }
     return out;
