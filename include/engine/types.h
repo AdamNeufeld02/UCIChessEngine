@@ -78,6 +78,9 @@ struct SearchLimits {
     int binc_ms     = 0;
     int movestogo   = 0;
     bool infinite   = false;
+
+    uint64_t hardTimeLimitMs = 0;
+    uint64_t softTimeLimitMs = 0;
 };
 
 inline Square operator+(Square sq, Direction dir) {

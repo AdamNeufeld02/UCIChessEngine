@@ -21,6 +21,8 @@ public:
     void clearSearch();
     void readyUp();
 
+    void calculateLimits(SearchLimits& limits);
+
     using BestMoveCallback = ThreadPool::BestMoveCallback;
     using InfoCallback     = ThreadPool::InfoCallback;
 

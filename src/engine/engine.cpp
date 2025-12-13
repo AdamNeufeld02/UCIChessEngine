@@ -22,7 +22,29 @@ void Engine::setThreads(size_t n) {
     threadPool.set(n);
 }
 
+void Engine::calculateLimits(SearchLimits& limits) {
+    if (limits.infinite || limits.depth > 0 || limits.movetime_ms > 0) {
+        if (limits.infinite) {
+            limits.hardTimeLimitMs = limits.softTimeLimitMs = 0;
+        } else if (limits.movetime_ms > 0) {
+            limits.softTimeLimitMs = limits.movetime_ms * 0.9;
+            limits.hardTimeLimitMs = limits.movetime_ms;
+        }
+        return;
+    }
+
+    int myTime = (board.sideToMove() == WHITE) ? limits.wtime_ms : limits.btime_ms;
+    int myInc  = (board.sideToMove() == WHITE) ? limits.winc_ms  : limits.binc_ms;
+
+    if (myTime <= 0) return;
+
+    uint64_t T_move = static_cast<uint64_t>(myTime / 20) + static_cast<uint64_t>(myInc / 2);
+    limits.softTimeLimitMs = T_move * 0.9;
+    limits.hardTimeLimitMs = T_move;
+}
+
 void Engine::go(SearchLimits sl) {
+    calculateLimits(sl);
     threadPool.startSearching(board, sl);
 }
 

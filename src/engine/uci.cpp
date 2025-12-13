@@ -12,6 +12,7 @@ namespace engine {
 constexpr auto StartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 UCIEngine::UCIEngine() {
+    zobrist::initZobrist();
     bb::init();
     init_eval_weights_default();
 

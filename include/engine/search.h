@@ -47,6 +47,11 @@ private:
 
     void updatePV(Move* pv, Move move, Move* childPv);
 
+    bool checkSoftLimit(int64_t elapsedMs);
+    bool checkHardLimit(int64_t elapsedMs);
+    bool checkLastManStanding();
+    bool checkMainWorker();
+
     ThreadPool& threads;
     Board rootBoard;
     SearchLimits limits;

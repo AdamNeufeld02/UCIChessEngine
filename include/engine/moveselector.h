@@ -30,6 +30,7 @@ public:
 
 private:
     Move pickBest(ScoredMove* end);
+    ScoredMove* eraseMove(ScoredMove* first, ScoredMove* last, Move m);
 
     ScoredMove moves[MAXMOVES];
     Board& board;
@@ -40,5 +41,15 @@ private:
     ScoredMove* endCur;
     ScoredMove* capEnd;
 };
+
+inline ScoredMove* MoveSelector::eraseMove(ScoredMove* first, ScoredMove* last, Move m) {
+    for (ScoredMove* p = first; p != last; ++p) {
+        if (p->move == m) {
+            *p = *(last - 1);
+            return last - 1;
+        }
+    }
+    return last;
+}
 
 }

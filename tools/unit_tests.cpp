@@ -1470,6 +1470,7 @@ namespace tests_cli{
     int run(int argc, char** argv) {
         (void)argc;
         (void)argv;
+        engine::zobrist::initZobrist();
         engine::bb::init();
         tests::runBitshiftTests();
         tests::runBetweenBBTests();

@@ -22,14 +22,21 @@ void MoveSelector::score() {
 
     for (ScoredMove* p = cur; p != endCur; p++) {
         Square to = toSq(p->move);
-        Piece cap = board.pieceOn(to);
-        int victimValue;
-        if (moveFlag(p->move) == ENPASSANT) {
+        Flags flag = moveFlag(p->move);
+        
+        int victimValue = 0;
+        int promValue = 0;
+        if (flag == ENPASSANT) {
             victimValue = W.material[PHASEMG][PAWN];
         } else {
+            PieceType cap = typeOf(board.pieceOn(to));
             victimValue = W.material[PHASEMG][cap];
         }
-        p->score = victimValue;
+
+        if (flag == PROMOTION) {
+            promValue = W.material[PHASEMG][promoPiece(p->move)];
+        }
+        p->score = victimValue + promValue;
     }
 }
 
@@ -47,6 +54,7 @@ Move MoveSelector::selectMove() {
         case CapturesInit:
             cur = moves;
             endCur = capEnd = generate<GEN_CAPTURES>(board, moves);
+            if (ttMove) capEnd = endCur = eraseMove(cur, capEnd, ttMove);
             score<GEN_CAPTURES>();
             stage = Captures;
             [[fallthrough]];
@@ -60,6 +68,7 @@ Move MoveSelector::selectMove() {
         case QuietsInit:
             cur = capEnd;
             endCur = generate<GEN_QUIETS>(board, capEnd);
+            if (ttMove) endCur = eraseMove(cur, endCur, ttMove);
             score<GEN_QUIETS>();
             stage = Quiets;
             [[fallthrough]];
@@ -73,6 +82,7 @@ Move MoveSelector::selectMove() {
         case EvasionsInit:
             cur = moves;
             endCur = generate<GEN_EVASIONS>(board, moves);
+            if (ttMove) endCur = eraseMove(cur, endCur, ttMove);
             score<GEN_EVASIONS>();
             stage = Evasions;
             [[fallthrough]];
@@ -95,7 +105,7 @@ Move MoveSelector::pickBest(ScoredMove* end) {
     ScoredMove* best = cur;
 
     for (ScoredMove* p = cur + 1; p != end; ++p) {
-        if (p->score > best->score && p->move != ttMove) {
+        if (p->score > best->score) {
             best = p;
         }
     }

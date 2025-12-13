@@ -22,11 +22,10 @@ public:
 
     void waitForSearch();
 
-
+    size_t idx;
 private:
     std::mutex mutex;
     std::condition_variable cv;
-    size_t idx;
     size_t nThreads;
     Worker worker;
     bool searching = true;
@@ -46,6 +45,7 @@ public:
     size_t numThreads();
     void set(size_t nThreads);
     void waitForAllThreads();
+    void waitForOthers(size_t idx);
 
     // === Callbacks ===
     using BestMoveCallback = std::function<void(Move best, int score, int depth, Move* pv)>;
@@ -57,7 +57,12 @@ public:
     void fireBestMove(Move best, int score, int depth, Move* pv);
     void fireInfo(const SearchInfo& info);
 
+    void incrementActive();
+    void decrementActive();
+    size_t activeSearchers() const { return searchingThreads.load(); }
+
     std::atomic_bool stop = false;
+    std::atomic<size_t> searchingThreads;
 private:
     std::vector<std::unique_ptr<Thread>> threads;
 

@@ -131,6 +131,7 @@ void Board::fenToBoard(std::string fenString, State* rootState) {
     st = rootState;
 
     updateChecksAndPins(colToMove);
+    calcZobristHashFromScratch();
 }
 
 void Board::makeMove(Move move, State* newState) {
@@ -226,7 +227,6 @@ void Board::makeMove(Move move, State* newState) {
             }
         }
     }
-
 }
 
 void Board::undoMove(Move move) {

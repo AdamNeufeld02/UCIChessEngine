@@ -123,7 +123,7 @@ inline bool Board::isDraw() const {
 }
 
 inline bool Board::isRepetitionDraw() const {
-    return st->repetitionCount > 2;
+    return st->repetitionCount >= 2;
 }
 
 inline bool Board::isCapture(Move move) const {

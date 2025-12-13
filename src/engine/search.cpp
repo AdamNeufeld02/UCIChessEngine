@@ -1,6 +1,10 @@
 #include "engine/search.h"
 #include "engine/threads.h"
 #include "engine/moveselector.h"
+#include "engine/engine.h"
+
+
+static const int CHECKFREQ = 4095;
 
 
 namespace engine {
@@ -21,9 +25,11 @@ void Worker::setRoot(const Board& root, const SearchLimits& l) {
 }
 
 void Worker::startSearching() {
+    threads.incrementActive();
     iterativeDeepening();
-
+    threads.decrementActive();
     if (threadID == 0) {
+        threads.waitForOthers(threadID);
         // For now just return information on self search don't consider other threads
         threads.fireBestMove(bestPv[0], bestScore, bestDepth, bestPv);
     }
@@ -64,7 +70,7 @@ void Worker::iterativeDeepening() {
             if (!rootBoard.legalMove(move)) continue;
             (ss+1)->pv[0] = NOMOVE;
             rootBoard.makeMove(move, &st);
-            currValue = -search(ss+1, rootBoard, topScore, VALUEINFINITE, depth - 1);
+            currValue = -search(ss+1, rootBoard, -VALUEINFINITE, -topScore, depth - 1);
             rootBoard.undoMove(move);
 
             if (threads.stop) return;
@@ -83,7 +89,8 @@ void Worker::iterativeDeepening() {
         bestDepth = depth;
 
         auto now = std::chrono::steady_clock::now();
-        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
+        int64_t elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
+
         if (elapsedMs <= 0) elapsedMs = 1;
         uint64_t nps = nodesSearched * 1000ULL / static_cast<uint64_t>(elapsedMs);
 
@@ -94,16 +101,24 @@ void Worker::iterativeDeepening() {
         si.nodes = nodesSearched;
         si.nps = nps;
 
-        threads.fireInfo(si);
+        if (threadID == 0) {
+            threads.fireInfo(si);
+        }
 
         if (limits.depth > 0 && limits.depth <= depth) return;
+
+        if (threadID != 0 && checkSoftLimit(elapsedMs)) return;
     }
-    
 }
 
 int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth) {
     nodesSearched++;
-    Move moves[MAXMOVES];
+
+    if (((nodesSearched & CHECKFREQ) == 0) && (threadID == 0) && checkMainWorker()) {
+        threads.stop = true;
+        return 0;
+    }
+
     Move pv[MAXPLY];
     Value topScore = -VALUEINFINITE;
     Value currValue = 0;
@@ -112,14 +127,15 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
     int movesSearched = 0;
 
     if (board.isDraw() || board.isRepetitionDraw()) return VALUEDRAW;
-    if (depth <= 0) return qsearch(ss+1, board, alpha, beta);
+
+    if (depth <= 0) return qsearch(ss, board, alpha, beta);
 
     MoveSelector ms = MoveSelector(NOMOVE, board, true);
     State st;
     Move move;
 
     while ((move = ms.selectMove()) != NOMOVE) {
-        if (!rootBoard.legalMove(move)) continue;
+        if (!board.legalMove(move)) continue;
         (ss+1)->pv[0] = NOMOVE;
         board.makeMove(move, &st);
         currValue = -search(ss+1, board, -beta, -alpha, depth - 1);
@@ -153,6 +169,11 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
 
 int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     nodesSearched++;
+
+    if (((nodesSearched & CHECKFREQ) == 0) && (threadID == 0) && checkMainWorker()) {
+        threads.stop = true;
+        return 0;
+    }
 
     if (board.isDraw() || board.isRepetitionDraw() || (ss->ply >= MAXPLY)) return VALUEDRAW;
 
@@ -211,6 +232,24 @@ void Worker::updatePV(Move* pv, Move move, Move* childPv) {
     for (*pv++ = move; childPv && *childPv != NOMOVE; )
         *pv++ = *childPv++;
     *pv = NOMOVE;
+}
+
+bool Worker::checkSoftLimit(int64_t elapsedMs) {
+    return limits.softTimeLimitMs && (elapsedMs > limits.softTimeLimitMs);
+}
+
+bool Worker::checkHardLimit(int64_t elapsedMs) {
+    return limits.hardTimeLimitMs && (elapsedMs > limits.hardTimeLimitMs);
+}
+
+bool Worker::checkLastManStanding() {
+    return (threads.numThreads() > 1) && (threads.activeSearchers() == 1);
+}
+
+bool Worker::checkMainWorker() {
+    auto now = std::chrono::steady_clock::now();
+    int64_t elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
+    return checkHardLimit(elapsedMs) || (checkLastManStanding() && checkSoftLimit(elapsedMs));
 }
 
 }

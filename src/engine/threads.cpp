@@ -88,6 +88,14 @@ void ThreadPool::waitForAllThreads() {
     }
 }
 
+void ThreadPool::waitForOthers(size_t idx) {
+    for (auto& t : threads) {
+        if (t->idx != idx) {
+            t->waitForSearch();
+        }
+    }
+}
+
 void ThreadPool::clearThreads() {
     for (auto& t : threads) {
         t->clearWorker();
@@ -101,6 +109,14 @@ Thread* ThreadPool::getBestThread() {
 
 size_t ThreadPool::numThreads() {
     return threads.size();
+}
+
+void ThreadPool::incrementActive() {
+    searchingThreads.fetch_add(1);
+}
+
+void ThreadPool::decrementActive() {
+    searchingThreads.fetch_sub(1);
 }
 
 void ThreadPool::fireBestMove(Move m, int score, int depth, Move* pv) {
