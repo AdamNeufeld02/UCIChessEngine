@@ -59,6 +59,7 @@ public:
     void calcZobristHashFromScratch();
 
     bool legalMove(Move move) const;
+    bool isCapture(Move move) const;
 
     bool isDraw() const;
     bool isRepetitionDraw() const;
@@ -122,6 +123,10 @@ inline bool Board::isDraw() const {
 
 inline bool Board::isRepetitionDraw() const {
     return st->repetitionCount > 2;
+}
+
+inline bool Board::isCapture(Move move) const {
+    return board[toSq(move)];
 }
 
 inline void Board::putPiece(Piece pc, Square sq) {

@@ -13,6 +13,9 @@ constexpr Value VALUEINFINITE = 20001;
 constexpr Value VALUEMATE = 20000;
 constexpr Value VALUEMATEINMAX = VALUEMATE - MAXPLY;
 
+inline bool isLoss(Value val) {
+    return val <= -VALUEMATEINMAX;
+}
 
 typedef uint64_t Bitboard;
 

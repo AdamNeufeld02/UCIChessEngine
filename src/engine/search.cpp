@@ -60,6 +60,7 @@ void Worker::iterativeDeepening() {
         currValue = 0;
         
         for (Move* m = rootMoves; m != rootEnd; m++) {
+            (ss+1)->pv[0] = NOMOVE;
             rootBoard.makeMove(*m, &st);
             currValue = -search(ss+1, rootBoard, topScore, VALUEINFINITE, depth - 1);
             rootBoard.undoMove(*m);
@@ -73,7 +74,7 @@ void Worker::iterativeDeepening() {
             }
         }
         
-        for (int i = 0; i < depth; i++) {
+        for (int i = 0; ss->pv[i] != NOMOVE && i < MAXPLY; i++) {
             bestPv[i] = ss->pv[i];
         }
         bestScore = topScore;
@@ -115,6 +116,7 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
     State st;
 
     for (Move* m = moves; m != end; m++) {
+            (ss+1)->pv[0] = NOMOVE;
             board.makeMove(*m, &st);
             currValue = -search(ss+1, board, -beta, -alpha, depth - 1);
             board.undoMove(*m);
@@ -148,21 +150,24 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
 int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     nodesSearched++;
 
-    if (board.isDraw() || board.isRepetitionDraw()) return VALUEDRAW;
+    if (board.isDraw() || board.isRepetitionDraw() || (ss->ply >= MAXPLY)) return VALUEDRAW;
 
-    Value standPat = evaluate(board);
-    if (standPat >= beta) {
-        return beta;
-    }
+    Value topScore = -VALUEINFINITE;
+    
+    if (!board.checkers()) {
+        Value standPat = evaluate(board);
+        if (standPat >= beta) {
+            return standPat;
+        }
 
-    if (standPat > alpha) {
-        alpha = standPat;
-    }
+        if (standPat > alpha) {
+            alpha = standPat;
+        }
+        topScore = standPat;
+    }  
 
     Move moves[MAXMOVES];
-    Value topScore = standPat;
     Value currValue = 0;
-
     int movesSearched = 0;
 
     Move* end;
@@ -175,14 +180,18 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     State st;
     
     for (Move* m = moves; m != end; m++) {
-        if (!board.legalMove(*m)) continue;
+
+        if ((!isLoss(topScore) && !board.isCapture(*m)) || !board.legalMove(*m)) continue;
+        
+        movesSearched++;
+   
         board.makeMove(*m, &st);
         currValue = -qsearch(ss+1, board, -beta, -alpha);
         board.undoMove(*m);
 
         if (threads.stop) return 0;
 
-        if (currValue >= beta) {
+        if (currValue >= beta) {            
             return currValue;
         }
 
@@ -192,7 +201,11 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
                 alpha = topScore;
             }
         }
+        
     }
+
+    if (movesSearched == 0 && board.checkers()) return -VALUEINFINITE + ss->ply;
+
     return topScore;
 }
 
