@@ -9,6 +9,7 @@
 #include "board.h"
 #include "move.h"
 #include "threads.h"
+#include "transpostable.h"
 
 namespace engine {
 
@@ -39,12 +40,13 @@ public:
     std::string squareUciString(Square sq);
 
     void setThreads(size_t n);
+    void setTranspositionTable(size_t mb);
 
 private:
     std::unique_ptr<std::deque<State>> states;
     Board board;
     ThreadPool threadPool;
-    
+    TranspositionTable tt;
 };
 
 }

@@ -12,6 +12,7 @@ constexpr Value VALUEDRAW = 0;
 constexpr Value VALUEINFINITE = 20001;
 constexpr Value VALUEMATE = 20000;
 constexpr Value VALUEMATEINMAX = VALUEMATE - MAXPLY;
+constexpr Value NOVALUE = VALUEINFINITE + 1;
 
 inline bool isLoss(Value val) {
     return val <= -VALUEMATEINMAX;
@@ -81,6 +82,13 @@ struct SearchLimits {
 
     uint64_t hardTimeLimitMs = 0;
     uint64_t softTimeLimitMs = 0;
+};
+
+enum Bound : int8_t {
+    NOBOUND,
+    UPPER,
+    LOWER,
+    EXACT
 };
 
 inline Square operator+(Square sq, Direction dir) {

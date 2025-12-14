@@ -27,6 +27,7 @@ UCIEngine::UCIEngine() {
         });
 
     engine.setThreads(1);
+    engine.setTranspositionTable(64);
 }
 
 void UCIEngine::loop() {

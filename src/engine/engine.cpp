@@ -19,7 +19,12 @@ void Engine::setPosition(std::string fen, std::vector<std::string>& moves) {
 }
 
 void Engine::setThreads(size_t n) {
-    threadPool.set(n);
+    threadPool.set(n, tt);
+}
+
+void Engine::setTranspositionTable(size_t mb) {
+    tt.resize(mb);
+    tt.dumpInfo();
 }
 
 void Engine::calculateLimits(SearchLimits& limits) {
@@ -54,6 +59,7 @@ void Engine::stopSearch() {
 
 void Engine::clearSearch() {
     threadPool.clearThreads();
+    tt.clear();
 }
 
 Move Engine::uciStringToMove(std::string move) {

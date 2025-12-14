@@ -1,5 +1,6 @@
 #pragma once
 #include "board.h"
+#include "transpostable.h"
 #include <vector>
 #include <chrono>
 
@@ -9,7 +10,7 @@ class ThreadPool;
 
 struct SharedState {
     ThreadPool& threads;
-    // Eventually add a transposition table reference
+    TranspositionTable& tt;
 };
 
 struct SearchInfo {
@@ -53,6 +54,7 @@ private:
     bool checkMainWorker();
 
     ThreadPool& threads;
+    TranspositionTable& tt;
     Board rootBoard;
     SearchLimits limits;
     size_t threadID;

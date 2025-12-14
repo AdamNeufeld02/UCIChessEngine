@@ -65,11 +65,11 @@ ThreadPool::ThreadPool()
     stop = false;
 }
 
-void ThreadPool::set(size_t n) {
+void ThreadPool::set(size_t n, TranspositionTable& tt) {
     threads.clear();
     if (n == 0) n = 1;
     threads.reserve(n);
-    SharedState shared = {*this};
+    SharedState shared = {*this, tt};
     for (size_t i = 0; i < n; ++i) {
         threads.push_back(std::make_unique<Thread>(shared, i, n));
     }

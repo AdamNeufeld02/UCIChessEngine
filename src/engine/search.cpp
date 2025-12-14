@@ -15,6 +15,7 @@ Worker::Worker(SharedState& st, size_t idx)
     , bestScore(0)
     , bestDepth(0)
     , threadID(idx)
+    , tt(st.tt)
 {
     std::fill(std::begin(bestPv), std::end(bestPv), NOMOVE);
 }

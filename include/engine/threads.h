@@ -9,6 +9,8 @@
 #include "board.h"
 #include "types.h"
 #include "search.h"
+#include "transpostable.h"
+
 
 namespace engine {
 class Thread {
@@ -43,7 +45,7 @@ public:
     void clearThreads();
     Thread* getBestThread();
     size_t numThreads();
-    void set(size_t nThreads);
+    void set(size_t nThreads, TranspositionTable& tt);
     void waitForAllThreads();
     void waitForOthers(size_t idx);
 

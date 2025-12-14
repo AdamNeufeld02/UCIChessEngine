@@ -27,6 +27,7 @@ add_library(engine_core
     src/engine/threads.cpp
     src/engine/search.cpp
     src/engine/moveselector.cpp
+    src/engine/transpostable.cpp
 )
 
 target_include_directories(engine_core
