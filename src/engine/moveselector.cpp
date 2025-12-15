@@ -42,12 +42,12 @@ void MoveSelector::score() {
         } else {
             int mainHist = history.mainHist(board.sideToMove(), pt, from, to);
             int contHist1, contHist2;
-            if (ss->ply >= 1) {
+            if (ss->ply >= 1  && (ss-2)->current != NOMOVE) {
                 contHist1 = history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), pt, to);
             } else {
                 contHist1 = -100;
             }
-            if (ss->ply >= 2) {
+            if (ss->ply >= 2  && (ss-2)->current != NOMOVE) {
                 contHist2 = history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), pt, to);
             } else {
                 contHist2 = -100;

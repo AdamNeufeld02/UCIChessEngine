@@ -58,36 +58,49 @@ void Worker::iterativeDeepening() {
     State st;
 
     Move best;
-    Value topScore;
     Value currValue;
+    int alpha, beta;
     Move move;
+    int movesSearched;
 
     for (int depth = 1; depth < MAXPLY; depth++) {
         best = NOMOVE;
-        topScore = -VALUEINFINITE;
         currValue = 0;
+        movesSearched = 0;
+        alpha = -VALUEINFINITE;
+        beta = VALUEINFINITE;
         MoveSelector ms = MoveSelector(bestPv[0], rootBoard, true, ss, history);
         
         while ((move = ms.selectMove()) != NOMOVE) {
             if (!rootBoard.legalMove(move)) continue;
+            ss->current = move;
+            ss->movedPT = typeOf(rootBoard.pieceOn(fromSq(move)));
             (ss+1)->pv[0] = NOMOVE;
             rootBoard.makeMove(move, &st);
-            currValue = -search(ss+1, rootBoard, -VALUEINFINITE, -topScore, depth - 1, true);
+            if (movesSearched == 0) {
+                currValue= -search(ss+1, rootBoard, -beta, -alpha, depth-1, true);
+            } else {
+                currValue = -search(ss+1, rootBoard, -(alpha+1), -alpha, depth-1, false);
+                if (currValue > alpha && currValue < beta) {
+                    currValue = -search(ss+1, rootBoard, -beta, -alpha, depth-1, true);
+                }
+            }
             rootBoard.undoMove(move);
 
             if (threads.stop) return;
 
-            if (currValue > topScore) {
-                topScore = currValue;
+            if (currValue > alpha) {
+                alpha = currValue;
                 best = move;
                 updatePV(ss->pv, move, (ss+1)->pv);
             }
+            movesSearched++;
         }
         
         for (int i = 0; ss->pv[i] != NOMOVE && i < MAXPLY; i++) {
             bestPv[i] = ss->pv[i];
         }
-        bestScore = topScore;
+        bestScore = alpha;
         bestDepth = depth;
 
         auto now = std::chrono::steady_clock::now();
@@ -127,6 +140,7 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
 
     // Probe transposition-table
     Move ttmove = NOMOVE;
+    Value staticEval = NOVALUE;
     auto [ttHit, ttData, ttWriter] = tt.probe(board.key());
     if (ttHit) {
         
@@ -141,7 +155,30 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
             }
         }
         ttmove = ttData.move;
+        staticEval = ttData.eval;
     }
+
+    if (staticEval == NOVALUE) {
+        staticEval = evaluate(board);
+    }
+
+    State st;
+
+    if (!pvNode && ((ss-1)->current != NOMOVE) && staticEval >= beta && !board.checkers() && board.nonPawnMaterial(board.sideToMove()) && depth >= 3){
+        ss->current = NOMOVE;
+        board.makeNullMove(&st);
+        Value nullValue = -search(ss+1, board, -beta, -beta+1, depth-3, false);
+        board.undoNullMove();
+        if (threads.stop) return 0;
+        if (nullValue >= beta) {
+            if (nullValue >= VALUEMATEINMAX || nullValue <= -VALUEMATEINMAX) {
+                return beta;
+            } else {
+                return nullValue;
+            }
+        }
+    }
+
     Move pv[MAXPLY];
     Value topScore = -VALUEINFINITE;
     Value currValue = 0;
@@ -150,11 +187,9 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
     MoveSelector ms = MoveSelector(ttmove, board, true, ss, history);
     SearchedMoves<SEARCHEDLISTCAP> searchedQuiets;
     SearchedMoves<SEARCHEDLISTCAP> searchedCaptures;
-    State st;
     Move move;
     Move topMove = NOMOVE;
     int alphaOrig = alpha;
-    bool unproven = false;
 
     while ((move = ms.selectMove()) != NOMOVE) {
         if (!board.legalMove(move)) continue;
@@ -166,9 +201,6 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
             currValue= -search(ss+1, board, -beta, -alpha, depth-1, pvNode);
         } else {
             currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1, false);
-            if (currValue > alpha && currValue < beta && !pvNode) {
-                unproven = true;
-            }
             if (pvNode && currValue > alpha && currValue < beta) {
                 currValue = -search(ss+1, board, -beta, -alpha, depth-1, true);
             }
@@ -187,7 +219,7 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
 
         // fail high
         if (currValue >= beta) {
-            ttWriter.write(board.key(), move, NOVALUE, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
+            ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
             updateHistories(board, ss, searchedCaptures, searchedQuiets, move, depth + QSEARCHHISTORYDEPTH);
             return currValue;
         }
@@ -210,8 +242,8 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
             return VALUEDRAW;
         }
     } 
-    Bound b = (topScore <= alphaOrig) ? UPPER : unproven? LOWER : EXACT;
-    ttWriter.write(board.key(), topMove, NOVALUE, toTTScore(topScore, ss->ply), depth, tt.currentGeneration(), b);
+    Bound b = pvNode && topMove != NOMOVE ? EXACT : UPPER;
+    ttWriter.write(board.key(), topMove, staticEval, toTTScore(topScore, ss->ply), depth, tt.currentGeneration(), b);
     updateHistories(board, ss, searchedCaptures, searchedQuiets, topMove, depth + QSEARCHHISTORYDEPTH);
     return topScore;
 }
@@ -269,7 +301,7 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     
     while ((move = ms.selectMove()) != NOMOVE) {
 
-        if ((!isLoss(topScore) && !board.isCapture(move)) || !board.legalMove(move)) continue;
+        if (!board.legalMove(move)) continue;
         
         movesSearched++;
         ss->current = move;
@@ -344,11 +376,11 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     }
 
     void Worker::updateContHistory(Board& board, SearchStack* ss, Move move, int reward) {
-        if (ss->ply >= 1) {
+        if (ss->ply >= 1 && (ss-1)->current != NOMOVE) {
             history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward;
         }
 
-        if (ss->ply >= 2) {
+        if (ss->ply >= 2 && (ss-2)->current != NOMOVE) {
             history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward; 
         }
     }

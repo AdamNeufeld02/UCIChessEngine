@@ -48,6 +48,9 @@ public:
     void makeMove(Move move, State* newState);
     void undoMove(Move move);
 
+    void makeNullMove(State* newState);
+    void undoNullMove();
+
     void updateChecksAndPins(Colour col);
     Bitboard getAttackers(Square sq, Colour col, Bitboard occ) const;
     void updateKingBlockers(Colour col);
@@ -62,6 +65,7 @@ public:
     bool pseudoLegalMove(Move move) const;
     bool isCapture(Move move) const;
     bool captureGenType(Move move) const;
+    bool nonPawnMaterial(Colour col) const;
 
     bool isDraw() const;
     bool isRepetitionDraw() const;
@@ -138,6 +142,10 @@ inline bool Board::isCapture(Move move) const {
 
 inline bool Board::captureGenType(Move move) const {
     return board[toSq(move)] || (promoPiece(move) == QUEEN);
+}
+
+inline bool Board::nonPawnMaterial(Colour col) const {
+    return pieces(col, KNIGHT) | pieces(col, BISHOP) | pieces(col, ROOK) | pieces(col, QUEEN);
 }
 
 inline void Board::putPiece(Piece pc, Square sq) {

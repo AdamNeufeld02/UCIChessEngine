@@ -259,6 +259,27 @@ void Board::undoMove(Move move) {
     }
 }
 
+void Board::makeNullMove(State* newState) {
+    memcpy(newState, st, offsetof(State, captured));
+    newState->boardKey ^= zobrist::sideToMoveKey;
+    newState->captured = EMPTY;
+    if (newState->epSquare != NOSQUARE) {
+        newState->boardKey ^= zobrist::epFile[newState->epSquare & 7];
+        newState->epSquare = NOSQUARE;
+    }
+    colToMove = ~colToMove;
+    newState->previous = st;
+    newState->movesFromNull = 0;
+    newState->repetitionCount = 0;
+    st = newState;
+    updateChecksAndPins(colToMove);
+}
+
+void Board::undoNullMove() {
+    colToMove = ~colToMove;
+    st = st->previous;
+}
+
 void Board::calcZobristHashFromScratch() {
     ZobristKey key = 0ULL;
 
