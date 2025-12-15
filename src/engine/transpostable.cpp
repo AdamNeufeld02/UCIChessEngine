@@ -3,7 +3,7 @@
 #include <windows.h>
 #include <cstring>
 #include <algorithm>
-
+#include <iostream>
 #include <cstdio>
 
 namespace engine {
@@ -17,8 +17,7 @@ static inline uint64_t fast_index(uint64_t x, uint64_t n) {
 }
 
 inline size_t bucketIndex(uint64_t key, size_t bucketCount) {
-    uint64_t x = key >> 16;
-    return (size_t)fast_index(x, (uint64_t)bucketCount);
+    return (size_t)fast_index(key, (uint64_t)bucketCount);
 }
 
 static size_t roundUp(size_t x, size_t a) {
@@ -72,7 +71,7 @@ static void freePages(void* p) {
 }
 
 bool TTEntry::isOccupied() {
-    return bool(key16);
+    return bool(bound8);
 }
 
 TTData TTEntry::read() {
@@ -80,18 +79,14 @@ TTData TTEntry::read() {
 }
 
 void TTEntry::save(ZobristKey key, Move move, Value eval, Value value, int depth, uint8_t generation, Bound bound) {
-    generation8 = generation;
-
-    if (move || uint16_t(key) != key16) {
-        move16 = move;
-    }
-
-    if ((depth > depth8) || (bound == EXACT && (depth >= depth8)) || key16 != uint16_t(key)) {
-        key16 = uint16_t(key);
+    if ((depth > depth8 - (generation - generation8)) || (bound == EXACT)|| (key16 != uint16_t(key))) {
         eval16 = int16_t(eval);
         value16 = int16_t(value);
         depth8 = uint8_t(depth);
         bound8 = uint8_t(bound);
+        generation8 = generation;
+        move16 = move;
+        key16 = uint16_t(key);       
     }
 }
 
@@ -161,7 +156,6 @@ void TranspositionTable::resize(size_t mb) {
 std::tuple<bool, TTData, TableWriter> TranspositionTable::probe(ZobristKey key) {
     TTEntry* tte = bucketHead(key);
     uint16_t key16 = uint16_t(key);
-
     for (int i = 0; i < BUCKETSIZE; i++) {
         if (tte[i].key16 == key16) {
             return {true, tte[i].read(), TableWriter(&tte[i])};

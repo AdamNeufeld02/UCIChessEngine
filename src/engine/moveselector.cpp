@@ -3,10 +3,13 @@
 
 namespace engine {
 
-MoveSelector::MoveSelector(Move ttm, Board& bd, bool quiets) :
+MoveSelector::MoveSelector(Move ttm, Board& bd, bool quiets, SearchStack* srchStck, History& hist) :
     ttMove(ttm),
     board(bd),
-    allowQuiets(quiets) {
+    allowQuiets(quiets),
+    history(hist),
+    ss(srchStck)
+    {
         if (ttm && board.pseudoLegalMove(ttm)) {
             stage = TTMove;
         } else if (!board.checkers()) {
@@ -18,25 +21,39 @@ MoveSelector::MoveSelector(Move ttm, Board& bd, bool quiets) :
 
 template<GenType Type>
 void MoveSelector::score() {
-    if (Type == GEN_QUIETS) return;
-
     for (ScoredMove* p = cur; p != endCur; p++) {
-        Square to = toSq(p->move);
-        Flags flag = moveFlag(p->move);
-        
-        int victimValue = 0;
-        int promValue = 0;
-        if (flag == ENPASSANT) {
-            victimValue = W.material[PHASEMG][PAWN];
+        Move m = p->move;
+        Square from = fromSq(m);
+        Square to   = toSq(m);
+        Flags flag  = moveFlag(m);
+        PieceType pt = typeOf(board.pieceOn(from));
+        if ((Type == GEN_CAPTURES) || board.captureGenType(p->move)) {
+            int MVV = 0;
+            int captHist = 0;
+            if (flag == ENPASSANT) {
+                MVV = W.material[PHASEMG][PAWN];
+                captHist = history.capHist(pt, to, PAWN);
+            } else {
+                PieceType cap = typeOf(board.pieceOn(to));
+                captHist = history.capHist(pt, to, cap);
+                MVV = W.material[PHASEMG][cap];
+            }
+            p->score = MVV_SCALE * MVV + CAPT_HIST_SCALE * captHist;
         } else {
-            PieceType cap = typeOf(board.pieceOn(to));
-            victimValue = W.material[PHASEMG][cap];
+            int mainHist = history.mainHist(board.sideToMove(), pt, from, to);
+            int contHist1, contHist2;
+            if (ss->ply >= 1) {
+                contHist1 = history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), pt, to);
+            } else {
+                contHist1 = -100;
+            }
+            if (ss->ply >= 2) {
+                contHist2 = history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), pt, to);
+            } else {
+                contHist2 = -100;
+            }
+            p->score = MAIN_HIST_SCALE * mainHist + CONT_HIST_1_SCALE * contHist1 + CONT_HIST_2_SCALE * contHist2;
         }
-
-        if (flag == PROMOTION) {
-            promValue = W.material[PHASEMG][promoPiece(p->move)];
-        }
-        p->score = victimValue + promValue;
     }
 }
 
@@ -101,7 +118,6 @@ Move MoveSelector::selectMove() {
 }
 
 Move MoveSelector::pickBest(ScoredMove* end) {
-    if (stage == Quiets) return (cur++)->move;
     ScoredMove* best = cur;
 
     for (ScoredMove* p = cur + 1; p != end; ++p) {

@@ -27,7 +27,7 @@ UCIEngine::UCIEngine() {
         });
 
     engine.setThreads(1);
-    engine.setTranspositionTable(64);
+    engine.setTranspositionTable(16);
 }
 
 void UCIEngine::loop() {
@@ -61,7 +61,7 @@ void UCIEngine::handleLine(const std::string& line) {
     } else if (token == "quit") {
         cmdQuit();
     } else if (token == "setoption") {
-        // cmdSetOption(iss);
+        cmdSetOption(iss);
     } else {
         return;
     }
@@ -74,8 +74,7 @@ void UCIEngine::cmdUci() {
     std::cout << "id name MyEngine 0.1\n";
     std::cout << "id author Adam\n";
 
-    // Options (add as needed later)
-    // std::cout << "option name Hash type spin default 16 min 1 max 1024\n";
+    std::cout << "option name Hash type spin default 16 min 1 max 1024\n";
 
     std::cout << "uciok\n";
     std::cout.flush();
@@ -156,6 +155,57 @@ void UCIEngine::cmdStop() {
 
 void UCIEngine::cmdQuit() {
     std::exit(0);
+}
+
+void UCIEngine::cmdSetOption(std::istringstream& iss) {
+    std::string token;
+
+    std::string name;
+    std::string value;
+
+    // Expected forms:
+    // setoption name Hash value 256
+    // setoption name Hash
+    // setoption name Some Option value blah
+    while (iss >> token) {
+        if (token == "name") {
+            name.clear();
+            while (iss >> token && token != "value") {
+                if (!name.empty()) name += ' ';
+                name += token;
+            }
+            if (token != "value") {
+                // no "value" provided; ignore
+                break;
+            }
+
+            // Read rest of stream as value (can have spaces, but for Hash it won't)
+            std::getline(iss, value);
+            // trim leading spaces
+            while (!value.empty() && value.front() == ' ') value.erase(value.begin());
+            break;
+        }
+    }
+
+    if (name.empty()) return;
+
+    if (name == "Hash") {
+        // value should be an integer in MB
+        if (value.empty()) return;
+        try {
+            long long mb = std::stoll(value);
+            if (mb < 1) mb = 1;
+            if (mb > 1024) mb = 1024;
+
+            // Call whichever API you actually have:
+            engine.setTranspositionTable(static_cast<size_t>(mb));
+        } catch (...) {
+            // ignore invalid values
+        }
+    }
+
+    // (optional) if you support Threads:
+    // else if (name == "Threads") { ... engine.setThreads(n); }
 }
 
 void UCIEngine::printInfo(const SearchInfo& info) {

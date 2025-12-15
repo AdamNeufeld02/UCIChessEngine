@@ -61,6 +61,7 @@ public:
     bool legalMove(Move move) const;
     bool pseudoLegalMove(Move move) const;
     bool isCapture(Move move) const;
+    bool captureGenType(Move move) const;
 
     bool isDraw() const;
     bool isRepetitionDraw() const;
@@ -76,6 +77,7 @@ public:
     Bitboard checkers() const;
     bool canCastle(CastlingRight cr) const;
     bool castlingBlocked(CastlingRight cr) const;
+    ZobristKey key() const;
 };
 
 inline Piece Board::pieceOn(Square sq) const {
@@ -118,6 +120,10 @@ inline Square Board::epSquare() const {
     return st->epSquare;
 }
 
+inline ZobristKey Board::key() const {
+    return st->boardKey;
+}
+
 inline bool Board::isDraw() const {
     return st->halfmoveClock > 99;
 }
@@ -128,6 +134,10 @@ inline bool Board::isRepetitionDraw() const {
 
 inline bool Board::isCapture(Move move) const {
     return board[toSq(move)];
+}
+
+inline bool Board::captureGenType(Move move) const {
+    return board[toSq(move)] || (promoPiece(move) == QUEEN);
 }
 
 inline void Board::putPiece(Piece pc, Square sq) {

@@ -18,6 +18,24 @@ inline bool isLoss(Value val) {
     return val <= -VALUEMATEINMAX;
 }
 
+inline bool isMateScore(Value s) {
+    return s >= VALUEMATEINMAX || s <= -VALUEMATEINMAX;
+}
+
+inline Value toTTScore(Value score, int plyFromRoot) {
+    if (!isMateScore(score)) return score;
+
+    return (score > 0) ? (score + plyFromRoot)
+                       : (score - plyFromRoot);
+}
+
+inline Value fromTTScore(Value ttScore, int plyFromRoot) {
+    if (!isMateScore(ttScore)) return ttScore;
+
+    return (ttScore > 0) ? (ttScore - plyFromRoot)
+                         : (ttScore + plyFromRoot);
+}
+
 typedef uint64_t Bitboard;
 
 enum Colour {

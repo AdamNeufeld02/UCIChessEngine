@@ -5,8 +5,13 @@
 #include "engine/board.h"
 #include <iostream>
 #include "engine/movegen.h"
+#include "engine/transpostable.h"
 #include <vector>
 #include <algorithm>
+#include <random>
+#include <cmath>
+#include <limits>
+#include <cstdint>
 
 
 namespace tests {
@@ -183,6 +188,132 @@ inline engine::ZobristKey recomputeZobrist(const engine::Board& b, const engine:
     }
 
     return key;
+}
+
+static inline uint64_t test_mul_hi_u64(uint64_t a, uint64_t b) {
+#if defined(_MSC_VER) && defined(_M_X64)
+    return __umulh(a, b);
+#else
+    return (uint64_t)(((__uint128_t)a * (__uint128_t)b) >> 64);
+#endif
+}
+
+static inline uint64_t test_fast_index(uint64_t x, uint64_t n) {
+    return test_mul_hi_u64(x, n);
+}
+
+static inline size_t test_bucketIndex(uint64_t key, size_t bucketCount) {
+    return (size_t)test_fast_index(key, (uint64_t)bucketCount);
+}
+
+static void checkUniformity(size_t nBuckets, uint64_t samples, const char* name) {
+    std::mt19937_64 rng(0x12345678ULL);
+    std::uniform_int_distribution<uint64_t> dist(0, std::numeric_limits<uint64_t>::max());
+
+    std::vector<uint32_t> hist(nBuckets, 0);
+
+    for (uint64_t i = 0; i < samples; ++i) {
+        uint64_t key = dist(rng);
+        size_t idx = test_bucketIndex(key, nBuckets);
+        // bounds safety
+        if (idx >= nBuckets) {
+            expectTrue(false, "fast_index produced out-of-range index (uniformity loop)");
+            return;
+        }
+        hist[idx]++;
+    }
+
+    const double expected = (double)samples / (double)nBuckets;
+    const double var = expected * (1.0 - 1.0 / (double)nBuckets); // binomial approx
+    const double sd = std::sqrt(var);
+
+    double chi2 = 0.0;
+    double maxAbsZ = 0.0;
+    uint32_t minC = std::numeric_limits<uint32_t>::max();
+    uint32_t maxC = 0;
+
+    for (size_t i = 0; i < nBuckets; ++i) {
+        const double c = (double)hist[i];
+        minC = std::min(minC, hist[i]);
+        maxC = std::max(maxC, hist[i]);
+
+        const double diff = c - expected;
+        chi2 += (diff * diff) / expected;
+
+        const double z = diff / sd;
+        maxAbsZ = std::max(maxAbsZ, std::abs(z));
+    }
+
+    const double df = (double)nBuckets - 1.0;
+    const double chi2PerDf = chi2 / df;
+
+    std::cout << "  [" << name << "] n=" << nBuckets
+              << " samples=" << samples
+              << " min=" << minC
+              << " max=" << maxC
+              << " max|z|=" << maxAbsZ
+              << " chi2/df=" << chi2PerDf
+              << "\n";
+
+    // These are *statistical sanity checks*, not a proof.
+    // Chosen to be conservative so it doesn't flake.
+    expectTrue(maxAbsZ < 8.0, "fast_index histogram max|z| too large (suspicious non-uniformity)");
+    expectTrue(chi2PerDf > 0.75 && chi2PerDf < 1.35, "fast_index chi2/df out of expected range");
+}
+
+void runFastIndexTests() {
+    failures = 0;
+    std::cout << "Running fast_index tests...\n";
+
+    // -----------------------
+    // 1) Bounds tests
+    // -----------------------
+    {
+        std::mt19937_64 rng(0xC0FFEEULL);
+        std::uniform_int_distribution<uint64_t> dist(0, std::numeric_limits<uint64_t>::max());
+
+        const uint64_t Ns[] = {
+            1, 2, 3, 5, 7, 10,
+            31, 32, 33,
+            997, 1000, 1001,
+            262144, 262145,
+            1000000, 16777216
+        };
+
+        constexpr int TRIALS = 1'000'000;
+
+        for (uint64_t n : Ns) {
+            expectTrue(n > 0, "n must be > 0");
+            for (int i = 0; i < TRIALS; ++i) {
+                uint64_t x = dist(rng);
+                uint64_t idx = test_fast_index(x, n);
+                if (idx >= n) {
+                    std::cout << "FAIL: bounds (n=" << n << " idx=" << idx << ")\n";
+                    ++failures;
+                    break;
+                }
+            }
+        }
+
+        std::cout << (failures == 0 ? "  Bounds: OK\n" : "  Bounds: FAILED\n");
+    }
+
+    // -----------------------
+    // 2) Uniformity tests
+    // -----------------------
+    // Keep this moderate so your unit tests don't take forever.
+    // You can crank SAMPLES up when you want to stress it.
+    {
+        constexpr uint64_t SAMPLES = 2'000'000;
+
+        checkUniformity(997,  SAMPLES, "prime-ish");
+        checkUniformity(1000, SAMPLES, "non-power-of-two");
+        checkUniformity(1024, SAMPLES, "power-of-two");
+        checkUniformity(16384, SAMPLES, "bigger");
+    }
+
+    std::cout << (failures == 0 ? "All fast_index tests passed.\n"
+                                : "fast_index tests FAILED.\n");
 }
 
 void runBitshiftTests() {
@@ -1463,6 +1594,137 @@ void runGenLegalConsistencyTests() {
                     : "movegen consistency tests FAILED.\n");
 }
 
+void runTranspositionTableBasicTests() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running transposition table basic read/write tests...\n";
+
+    // Make a TT and give it some space. (Use >= 1MB, your resize() clamps anyway.)
+    TranspositionTable tt;
+    tt.resize(8);
+    tt.clear();
+    tt.newSearch(); // generation increments
+
+    // -----------------------------
+    // 1) Miss -> write -> hit cycle
+    // -----------------------------
+    {
+        Board b;
+        State root{};
+        const std::string fen =
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+        b.fenToBoard(fen, &root);
+
+        const ZobristKey key = root.boardKey;
+
+        // Probe should MISS first.
+        {
+            auto [hit, data, writer] = tt.probe(key);
+            expectEq(hit, false, "TT first probe should miss");
+
+            // Write some deterministic content.
+            Move m = makeMoveBasic(E2, E4);
+            Value eval  = NOVALUE;
+            Value value = Value(-34);
+            int depth   = 7;
+
+            writer.write(key, m, eval, value, depth, /*generation*/ 1, EXACT);
+        }
+
+        // Probe should HIT now, and data should match.
+        {
+            auto [hit, data, writer] = tt.probe(key);
+            (void)writer;
+
+            expectEq(hit, true, "TT second probe should hit");
+            expectEq(data.move,  makeMoveBasic(E2, E4), "TT move round-trip");
+            expectEq(data.eval,  NOVALUE,               "TT eval round-trip");
+            expectEq(data.value, Value(-34),            "TT value round-trip");
+            expectEqInt((int)data.depth, 7,             "TT depth round-trip");
+            expectEq(data.bound, EXACT,                 "TT bound round-trip");
+        }
+    }
+
+    // ----------------------------------------------------------
+    // 2) "Worse write" should NOT replace (lower depth, non-EXACT)
+    // ----------------------------------------------------------
+    {
+        Board b;
+        State root{};
+        const std::string fen =
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+        b.fenToBoard(fen, &root);
+        const ZobristKey key = root.boardKey;
+
+        // Seed the entry with a good record.
+        {
+            auto [hit, data, writer] = tt.probe(key);
+            (void)hit; (void)data;
+
+            writer.write(key,
+                         makeMoveBasic(G1, F3),
+                         Value(100),
+                         Value(200),
+                         /*depth*/ 10,
+                         /*generation*/ 2,
+                         EXACT);
+        }
+
+        // Attempt to overwrite with LOWER depth and non-EXACT bound.
+        // According to TTEntry::save(), this should NOT replace value/eval/depth/bound
+        // (it may update move if move != 0, but your logic only guarantees non-replace
+        //  for the main fields; we assert those).
+        {
+            auto [hit, data, writer] = tt.probe(key);
+            expectEq(hit, true, "TT should hit seeded record before overwrite attempt");
+
+            writer.write(key,
+                         makeMoveBasic(B1, C3),
+                         Value(-5),
+                         Value(-6),
+                         /*depth*/ 3,
+                         /*generation*/ 3,
+                         LOWER); // or UPPER, just not EXACT
+        }
+
+        // Verify core fields stayed as the better record.
+        {
+            auto [hit, data, writer] = tt.probe(key);
+            (void)writer;
+
+            expectEq(hit, true, "TT should still hit after overwrite attempt");
+            expectEq(data.eval,  Value(100), "TT eval should not be replaced by lower depth non-EXACT");
+            expectEq(data.value, Value(200), "TT value should not be replaced by lower depth non-EXACT");
+            expectEqInt((int)data.depth, 10, "TT depth should not be replaced by lower depth non-EXACT");
+            expectEq(data.bound, EXACT,      "TT bound should not be replaced by lower depth non-EXACT");
+        }
+    }
+
+    // -----------------------------------------
+    // 3) Different position key should be a miss
+    // -----------------------------------------
+    {
+        Board b;
+        State root{};
+        const std::string fenDifferent =
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"; // after e2e4
+
+        b.fenToBoard(fenDifferent, &root);
+        const ZobristKey key = root.boardKey;
+
+        auto [hit, data, writer] = tt.probe(key);
+        (void)data; (void)writer;
+
+        expectEq(hit, false, "TT probe for different FEN key should miss (unless replaced by chance)");
+    }
+
+    std::cout << (failures == 0 ? "All transposition table tests passed.\n"
+                                : "transposition table tests FAILED.\n");
+}
+
 }
 
 namespace tests_cli{
@@ -1488,6 +1750,8 @@ namespace tests_cli{
         tests::runGenAttacksBBTests();
         tests::runLegalMoveTests();
         tests::runGenLegalConsistencyTests();
+        tests::runFastIndexTests();
+        tests::runTranspositionTableBasicTests();
         return 0;
     }
 }

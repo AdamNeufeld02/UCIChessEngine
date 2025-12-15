@@ -26,7 +26,7 @@ struct TTEntry {
     uint16_t key16;
     int16_t move16;
     int16_t eval16;
-    uint16_t value16;
+    int16_t value16;
     uint8_t depth8;
     uint8_t generation8;
     uint8_t bound8;
@@ -66,6 +66,7 @@ public:
     void resize(size_t mb);
     std::tuple<bool, TTData, TableWriter> probe(const ZobristKey key);
     TTEntry* bucketHead(const ZobristKey key);
+    uint8_t currentGeneration();
 
     // Debug
     void dumpInfo() const;
@@ -79,5 +80,9 @@ private:
     bool usingLargePages = false;
     size_t bytesAllocated = 0;
 };
+
+inline uint8_t TranspositionTable::currentGeneration() {
+    return generation;
+}
 
 }

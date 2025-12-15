@@ -28,6 +28,7 @@ private:
     void cmdGo(std::istringstream& iss);
     void cmdStop();
     void cmdQuit();
+    void cmdSetOption(std::istringstream& iss); 
 
     // === Helpers ===
     SearchLimits parseGo(std::istringstream& iss);

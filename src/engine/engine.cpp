@@ -49,6 +49,7 @@ void Engine::calculateLimits(SearchLimits& limits) {
 }
 
 void Engine::go(SearchLimits sl) {
+    tt.newSearch();
     calculateLimits(sl);
     threadPool.startSearching(board, sl);
 }

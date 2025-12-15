@@ -1,6 +1,8 @@
 #pragma once
 #include "board.h"
 #include "transpostable.h"
+#include "move.h"
+#include "history.h"
 #include <vector>
 #include <chrono>
 
@@ -28,7 +30,25 @@ struct SearchStack {
     int ply;
     Move* pv;
     Move current;
+    PieceType movedPT;
     bool didNull;
+};
+
+constexpr int QSEARCHHISTORYDEPTH = 4;
+
+constexpr int SEARCHEDLISTCAP = 32;
+template<size_t MaxSize>
+class SearchedMoves {
+public:
+    constexpr size_t size() const {return length;}
+    constexpr void pushBack(Move move) {moves[length++] = move;}
+    constexpr const Move* begin() const {return moves;}
+    constexpr const Move& operator[](int index) const {return moves[index];}
+    constexpr const Move* end() const { return moves + length; }
+
+private:
+    Move moves[MaxSize];
+    size_t length = 0;
 };
 
 class Worker {
@@ -40,7 +60,7 @@ public:
     void clear();
 
     void iterativeDeepening();
-    Value search(SearchStack* ss, Board& board, Value alpha, Value beta, int depth);
+    Value search(SearchStack* ss, Board& board, Value alpha, Value beta, int depth, bool pvNode);
     Value qsearch(SearchStack* ss, Board& board, Value alpha, Value beta);
 
 
@@ -53,8 +73,16 @@ private:
     bool checkLastManStanding();
     bool checkMainWorker();
 
+    void updateHistories(Board& board, SearchStack* ss, SearchedMoves<SEARCHEDLISTCAP>& searchedCaptures, SearchedMoves<SEARCHEDLISTCAP>& searchedQuiets, Move bestMove, int depth);
+    void updateContHistory(Board& board, SearchStack* ss, Move move, int reward);
+    void updateMainHistory(Board& board, Move move, int reward);
+    void updateCaptureHistory(Board& board, Move move, int reward);
+
     ThreadPool& threads;
     TranspositionTable& tt;
+    History history;
+    
+
     Board rootBoard;
     SearchLimits limits;
     size_t threadID;

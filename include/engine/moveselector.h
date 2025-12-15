@@ -3,6 +3,7 @@
 #include "move.h"
 #include "board.h"
 #include "movegen.h"
+#include "search.h"
 
 namespace engine {
 
@@ -17,10 +18,16 @@ enum Stage : uint8_t{
     Done
 };
 
+static const int MVV_SCALE = 16;
+static const int CAPT_HIST_SCALE = 1;
+static const int MAIN_HIST_SCALE = 2;
+static const int CONT_HIST_1_SCALE = 1;
+static const int CONT_HIST_2_SCALE = 1;
+
 
 class MoveSelector {
 public:
-    MoveSelector(Move ttm, Board& bd, bool quiets);
+    MoveSelector(Move ttm, Board& bd, bool quiets, SearchStack* ss, History& hist);
 
     Move selectMove();
 
@@ -40,6 +47,9 @@ private:
     ScoredMove* cur;
     ScoredMove* endCur;
     ScoredMove* capEnd;
+
+    SearchStack* ss;
+    History& history;
 };
 
 inline ScoredMove* MoveSelector::eraseMove(ScoredMove* first, ScoredMove* last, Move m) {
