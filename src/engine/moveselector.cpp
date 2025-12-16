@@ -47,7 +47,7 @@ void MoveSelector::score() {
         } else {
             int mainHist = history.mainHist(board.sideToMove(), pt, from, to);
             int contHist1, contHist2;
-            if (ss->ply >= 1  && (ss-2)->current != NOMOVE) {
+            if (ss->ply >= 1  && (ss-1)->current != NOMOVE) {
                 contHist1 = history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), pt, to);
             } else {
                 contHist1 = -100;
@@ -84,7 +84,7 @@ Move MoveSelector::selectMove() {
         case GoodCaptures:
             while (cur != capEnd) {
                 Move capt = pickBest(capEnd);
-                if (board.seeThreshold(capt, 0)) {
+                if (board.seeThreshold(capt, -20)) {
                     return capt;
                 }
                 std::swap(*badCapEnd++, *(cur-1));
@@ -104,7 +104,7 @@ Move MoveSelector::selectMove() {
         case Quiets:
             if (cur != endCur)
                 return pickBest(endCur);
-            stage = (badCapEnd != capEnd) ? BadCaptureinit : Done;
+            stage = (badCapEnd != moves) ? BadCaptureinit : Done;
             break;
 
         case BadCaptureinit:
