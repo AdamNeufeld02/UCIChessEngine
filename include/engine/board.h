@@ -23,6 +23,7 @@ struct State{
 
     Piece captured;
     Bitboard blockersForKing[COLOURNB];
+    Bitboard pinners[COLOURNB];
     Bitboard checkers;
     int repetitionCount;
     State* previous;
@@ -61,6 +62,8 @@ public:
 
     void calcZobristHashFromScratch();
 
+    bool seeThreshold(Move move, int thresh);
+
     bool legalMove(Move move) const;
     bool pseudoLegalMove(Move move) const;
     bool isCapture(Move move) const;
@@ -73,12 +76,15 @@ public:
     // Accessors
     Piece pieceOn(Square sq) const;
     Bitboard pieces(Colour col, PieceType pt) const;
+    Bitboard pieces(PieceType pt) const;
     Bitboard pieces(Colour col) const;
     Bitboard pieces() const;
     Colour sideToMove() const;
     Square kingSquare(Colour col) const;
     Square epSquare() const;
     Bitboard checkers() const;
+    Bitboard pinners(Colour col) const;
+    Bitboard pinned(Colour col) const;
     bool canCastle(CastlingRight cr) const;
     bool castlingBlocked(CastlingRight cr) const;
     ZobristKey key() const;
@@ -90,6 +96,10 @@ inline Piece Board::pieceOn(Square sq) const {
 
 inline Bitboard Board::pieces(Colour col, PieceType pt) const {
     return pieceBB[makePiece(col, pt)];
+}
+
+inline Bitboard Board::pieces(PieceType pt) const {
+    return pieceBB[makePiece(WHITE, pt)] | pieceBB[makePiece(BLACK, pt)];
 }
 
 inline Bitboard Board::pieces(Colour col) const {
@@ -110,6 +120,14 @@ inline Square Board::kingSquare(Colour col) const {
 
 inline Bitboard Board::checkers() const {
     return st->checkers;
+}
+
+inline Bitboard Board::pinners(Colour col) const {
+    return st->pinners[col];
+}
+
+inline Bitboard Board::pinned(Colour col) const {
+    return st->blockersForKing[col] & pieces(col);
 }
 
 inline bool Board::canCastle(CastlingRight cr) const {

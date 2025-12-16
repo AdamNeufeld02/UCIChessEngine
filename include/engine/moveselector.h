@@ -10,19 +10,21 @@ namespace engine {
 enum Stage : uint8_t{
     TTMove,
     CapturesInit,
-    Captures,
+    GoodCaptures,
     QuietsInit,
     Quiets,
+    BadCaptureinit,
+    BadCaptures,
     EvasionsInit,
     Evasions,
     Done
 };
 
 static const int MVV_SCALE = 16;
-static const int CAPT_HIST_SCALE = 1;
-static const int MAIN_HIST_SCALE = 2;
-static const int CONT_HIST_1_SCALE = 1;
-static const int CONT_HIST_2_SCALE = 1;
+static const int CAPT_HIST_SCALE = 5;
+static const int MAIN_HIST_SCALE = 5;
+static const int CONT_HIST_1_SCALE = 12;
+static const int CONT_HIST_2_SCALE = 12;
 
 
 class MoveSelector {
@@ -47,6 +49,7 @@ private:
     ScoredMove* cur;
     ScoredMove* endCur;
     ScoredMove* capEnd;
+    ScoredMove* badCapEnd;
 
     SearchStack* ss;
     History& history;

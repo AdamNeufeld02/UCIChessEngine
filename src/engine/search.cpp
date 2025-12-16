@@ -260,8 +260,18 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
 
     Value topScore = -VALUEINFINITE;
     
+    Move ttmove = NOMOVE;
+    auto [ttHit, ttData, ttWriter] = tt.probe(board.key());
+    Value standPat = NOVALUE;
+
+    if (ttHit) {
+        standPat = ttData.eval;
+    }
+    if (standPat == NOVALUE) {
+        standPat = evaluate(board);
+    }
+
     if (!board.checkers()) {
-        Value standPat = evaluate(board);
         if (standPat >= beta) {
             return standPat;
         }
@@ -272,8 +282,6 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
         topScore = standPat;
     }  
 
-    Move ttmove = NOMOVE;
-    auto [ttHit, ttData, ttWriter] = tt.probe(board.key());
     if (ttHit) {
         if (ttData.depth >= 0) {
             Value ttValue = fromTTScore(ttData.value, ss->ply);
@@ -302,6 +310,20 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     while ((move = ms.selectMove()) != NOMOVE) {
 
         if (!board.legalMove(move)) continue;
+
+        // pruning
+        if (!board.checkers()) {
+            if (board.captureGenType(move)) {
+                Value captVal = moveFlag(move) == ENPASSANT ? PAWN : W.material[PHASEMG][typeOf(board.pieceOn(toSq(move)))];
+                Value promVal = moveFlag(move) == PROMOTION ? W.material[PHASEMG][promoPiece(move)] - W.material[PHASEMG][PAWN] : 0;
+
+                // delta pruning
+                if (standPat + captVal + promVal + 164 <= alpha) continue;
+
+                // SEE pruning
+                if (!board.seeThreshold(move, -20)) continue;
+            }
+        }
         
         movesSearched++;
         ss->current = move;

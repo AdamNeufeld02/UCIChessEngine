@@ -1,6 +1,7 @@
 #include <string>
 #include "engine/board.h"
 #include "engine/movegen.h"
+#include <iostream>
 
 namespace engine{
 
@@ -319,18 +320,23 @@ void Board::updateKingBlockers(Colour col) {
                                 (genAttacksBB<BISHOP>(ksq, 0) & (pieces(~col, BISHOP) | pieces(~col, QUEEN)));
 
     Bitboard blockers = 0;
+    Bitboard pinners = 0;
     Bitboard occupancy = allPieces ^ potentialThreats;
 
     while (potentialThreats) {
-        int threatSq = pop_lsb(potentialThreats);
+        Square threatSq = pop_lsb(potentialThreats);
         Bitboard pinned = betweenBB[ksq][threatSq] & occupancy;
 
         if (pinned && !moreThanOne(pinned)) {
             blockers |= pinned;
+            if (pinned & pieces(col)) {
+                pinners |= bit(threatSq);
+            }
         }
     }
 
     st->blockersForKing[col] = blockers;
+    st->pinners[~col] = pinners;
 }
 
 void Board::updateChecksAndPins(Colour col) {
@@ -429,6 +435,73 @@ bool Board::legalMove(Move move) const {
     }
 
     return !(st->blockersForKing[us] & bit(from)) || (lineBB[from][to] & pieces(us, KING));
+}
+
+bool Board::seeThreshold(Move move, int thresh) {
+    if (moveFlag(move) != NOFLAG) return true;
+
+    Square from = fromSq(move);
+    Square to = toSq(move);
+
+    int exchange = W.material[PHASEMG][typeOf(pieceOn(to))] - thresh;
+
+    if (exchange < 0) return false;
+
+    exchange = W.material[PHASEMG][typeOf(pieceOn(from))] - exchange;
+
+    if (exchange <= 0) return true;
+
+    Bitboard occ = pieces() ^ bit(from) ^ bit(to);
+    Colour stm = sideToMove();
+    Bitboard attackers = getAttackers(to, stm, occ) | getAttackers(to, ~stm, occ);
+    Bitboard stmAttackers, bb;
+
+    int res = 1;
+    while (true) {
+        stm = ~stm;
+        attackers &= occ;
+        stmAttackers = attackers & pieces(stm);
+        if (pinners(~stm) & occ) {
+            stmAttackers &= ~pinned(stm);
+        }
+
+        if (!stmAttackers) break;
+
+        res ^= 1;
+
+        // Cycle through attackers from least to most valuable
+        // If at any point we can stop capturing and are above or at the threshold return true
+        // If at any point they can stop capturing and we are below the threshold return false
+        if ((bb = stmAttackers & pieces(stm, PAWN))) {
+            if ((exchange = W.material[PHASEMG][PAWN] - exchange) < res) break;
+
+            occ ^= bit(static_cast<Square>(lsb(bb)));
+            attackers |= genAttacksBB<BISHOP>(to, occ) & (pieces(BISHOP) | pieces(QUEEN));
+        } else if ((bb = stmAttackers & pieces(stm, KNIGHT))) {
+            if ((exchange = W.material[PHASEMG][KNIGHT] - exchange) < res) break;
+
+            occ ^= bit(static_cast<Square>(lsb(bb)));
+        } else if ((bb = stmAttackers & pieces(stm, BISHOP))) {
+            if ((exchange = W.material[PHASEMG][BISHOP] - exchange) < res) break;
+
+            occ ^= bit(static_cast<Square>(lsb(bb)));
+            attackers |= genAttacksBB<BISHOP>(to, occ) & (pieces(BISHOP) | pieces(QUEEN));
+        } else if ((bb = stmAttackers & pieces(stm, ROOK))) {
+            if ((exchange = W.material[PHASEMG][ROOK] - exchange) < res) break;
+
+            occ ^= bit(static_cast<Square>(lsb(bb)));
+            attackers |= genAttacksBB<ROOK>(to, occ) & (pieces(ROOK) | pieces(QUEEN));
+        } else if ((bb = stmAttackers & pieces(stm, QUEEN))) {
+            if ((exchange = W.material[PHASEMG][QUEEN] - exchange) < res) break;
+
+            occ ^= bit(static_cast<Square>(lsb(bb)));
+            attackers |= genAttacksBB<BISHOP>(to, occ) & (pieces(BISHOP) | pieces(QUEEN));
+            attackers |= genAttacksBB<ROOK>(to, occ) & (pieces(ROOK) | pieces(QUEEN));
+        } else {
+            return attackers & pieces(~stm) ? res ^ 1 : res;
+        }
+    }
+    return res;
 }
 
 }

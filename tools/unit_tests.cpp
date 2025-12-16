@@ -1725,6 +1725,81 @@ void runTranspositionTableBasicTests() {
                                 : "transposition table tests FAILED.\n");
 }
 
+void runSeeThresholdTests() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running SEE threshold (seeThreshold) tests...\n";
+
+    // ----------------------------------------------------------
+    // 1) Flagged moves short-circuit to true (CASTLE/EP/PROMO)
+    // ----------------------------------------------------------
+    {
+        Board b;
+        State root{};
+        b.fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &root);
+
+        // Even if the move isn't legal in this position, seeThreshold returns true immediately on flags.
+        expectTrue(b.seeThreshold(makeMoveWithFlag(E1, G1, CASTLE), 0), "SEE flagged CASTLE returns true");
+        expectTrue(b.seeThreshold(makeMoveWithFlag(E5, D6, ENPASSANT), 0), "SEE flagged ENPASSANT returns true");
+        expectTrue(b.seeThreshold(makePromoMove(E7, E8, QUEEN), 0), "SEE flagged PROMOTION returns true");
+    }
+
+    // ----------------------------------------------------------
+    // 2) Immediate fail: capturedValue - thresh < 0 => false
+    // Knight takes pawn, but thresh too high
+    // ----------------------------------------------------------
+    {
+        Board b;
+        State root{};
+        b.fenToBoard("4k3/8/8/4p3/4N3/8/8/4K3 w - - 0 1", &root);
+
+        Move m = makeMoveBasic(E4, E5); // Nxe5 (capture pawn)
+        expectEq(b.seeThreshold(m, 200), false, "SEE fails immediately when threshold too high");
+    }
+
+    // ----------------------------------------------------------
+    // 3) Immediate pass: exchange <= 0 after subtracting capt-from piece
+    // Pawn takes queen should pass even with decent threshold
+    // ----------------------------------------------------------
+    {
+        Board b;
+        State root{};
+        b.fenToBoard("4k3/8/8/4q3/3P4/8/8/4K3 w - - 0 1", &root);
+
+        Move m = makeMoveBasic(D4, E5); // dxe5 capturing queen on e5
+        expectEq(b.seeThreshold(m, 0), true, "SEE winning capture passes (thresh=0)");
+        expectEq(b.seeThreshold(m, 200), true, "SEE winning capture passes (thresh=200)");
+    }
+
+    // ----------------------------------------------------------
+    // 4) Pinned recapture is masked out by your pinned filtering
+    // Case A: black rook e7 pinned to king e8 by white rook e1
+    // White plays Nxe5 (E4->E5). Rook recapture exists but should be ignored.
+    // ----------------------------------------------------------
+    {
+        Board b;
+        State root{};
+        b.fenToBoard("4k3/4r3/8/4p3/4N3/8/8/4R1K1 w - - 0 1", &root);
+
+        Move m = makeMoveBasic(E4, E5); // Nxe5
+        expectEq(b.seeThreshold(m, 0), true, "SEE ignores pinned recapture attacker (pinned rook masked)");
+    }
+
+    // Case B: remove the pin (white rook not on e1), rook recapture should now count -> fail at thresh=0
+    {
+        Board b;
+        State root{};
+        b.fenToBoard("4k3/4r3/8/4p3/4N3/8/8/R5K1 w - - 0 1", &root);
+
+        Move m = makeMoveBasic(E4, E5); // Nxe5
+        expectEq(b.seeThreshold(m, 0), false, "SEE counts unpinned recapture attacker (should fail)");
+    }
+
+    std::cout << (failures == 0 ? "All SEE threshold tests passed.\n"
+                                : "SEE threshold tests FAILED.\n");
+}
+
 }
 
 namespace tests_cli{
@@ -1734,6 +1809,7 @@ namespace tests_cli{
         (void)argv;
         engine::zobrist::initZobrist();
         engine::bb::init();
+        engine::init_eval_weights_default();
         tests::runBitshiftTests();
         tests::runBetweenBBTests();
         tests::runPawnAttackTests();
@@ -1752,6 +1828,7 @@ namespace tests_cli{
         tests::runGenLegalConsistencyTests();
         tests::runFastIndexTests();
         tests::runTranspositionTableBasicTests();
+        tests::runSeeThresholdTests();
         return 0;
     }
 }

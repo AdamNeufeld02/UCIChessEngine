@@ -38,7 +38,12 @@ void MoveSelector::score() {
                 captHist = history.capHist(pt, to, cap);
                 MVV = W.material[PHASEMG][cap];
             }
-            p->score = MVV_SCALE * MVV + CAPT_HIST_SCALE * captHist;
+            if (Type == GEN_EVASIONS) {
+                p->score = MVV_SCALE * MVV + CAPT_HIST_SCALE * captHist + (1 << 15);
+            } else {
+                p->score = MVV_SCALE * MVV + CAPT_HIST_SCALE * captHist;
+            }
+           
         } else {
             int mainHist = history.mainHist(board.sideToMove(), pt, from, to);
             int contHist1, contHist2;
@@ -69,17 +74,23 @@ Move MoveSelector::selectMove() {
             }
 
         case CapturesInit:
-            cur = moves;
+            cur = badCapEnd = moves;
             endCur = capEnd = generate<GEN_CAPTURES>(board, moves);
             if (ttMove) capEnd = endCur = eraseMove(cur, capEnd, ttMove);
             score<GEN_CAPTURES>();
-            stage = Captures;
+            stage = GoodCaptures;
             [[fallthrough]];
 
-        case Captures:
-            if (cur != capEnd)
-                return pickBest(capEnd);
-            stage = allowQuiets ? QuietsInit : Done;
+        case GoodCaptures:
+            while (cur != capEnd) {
+                Move capt = pickBest(capEnd);
+                if (board.seeThreshold(capt, 0)) {
+                    return capt;
+                }
+                std::swap(*badCapEnd++, *(cur-1));
+            }
+
+            stage = allowQuiets ? QuietsInit : (badCapEnd != moves) ? BadCaptureinit : Done;
             break;
 
         case QuietsInit:
@@ -93,6 +104,17 @@ Move MoveSelector::selectMove() {
         case Quiets:
             if (cur != endCur)
                 return pickBest(endCur);
+            stage = (badCapEnd != capEnd) ? BadCaptureinit : Done;
+            break;
+
+        case BadCaptureinit:
+            cur = moves;
+            stage = BadCaptures;
+            [[fallthrough]];
+
+        case BadCaptures:
+            if (cur != badCapEnd)
+                return pickBest(badCapEnd);
             stage = Done;
             break;
 
