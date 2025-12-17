@@ -32,7 +32,8 @@ void Worker::startSearching() {
     if (threadID == 0) {
         threads.waitForOthers(threadID);
         // For now just return information on self search don't consider other threads
-        threads.fireBestMove(bestPv[0], bestScore, bestDepth, bestPv);
+        Move best = threads.voteBestMove();
+        threads.fireBestMove(best, bestScore, bestDepth, bestPv);
     }
 }
 
@@ -42,64 +43,30 @@ void Worker::clear() {
 }
 
 void Worker::iterativeDeepening() {
-    SearchStack ss[MAXPLY];
-    Move rootPv[MAXPLY];
-    Move pv[MAXPLY];
-    ss->pv = rootPv;
-    (ss+1)->pv = pv;
     nodesSearched = 0;
     startTime = std::chrono::steady_clock::now();
+    selDepth = 0;
 
+    SearchStack ss[MAXPLY];
+    Move rootPv[MAXPLY];
+    ss->pv = rootPv;
     for (int i = 0; i < MAXPLY; i++) {
         ss[i].ply = i;
         bestPv[i] = NOMOVE;
     }
 
-    State st;
-
-    Move best;
-    Value currValue;
-    int alpha, beta;
-    Move move;
-    int movesSearched;
+    Value alpha = NOVALUE;
 
     for (int depth = 1; depth < MAXPLY; depth++) {
-        best = NOMOVE;
-        currValue = 0;
-        movesSearched = 0;
-        alpha = -VALUEINFINITE;
-        beta = VALUEINFINITE;
-        MoveSelector ms = MoveSelector(bestPv[0], rootBoard, true, ss, history);
-        
-        while ((move = ms.selectMove()) != NOMOVE) {
-            if (!rootBoard.legalMove(move)) continue;
-            ss->current = move;
-            ss->movedPT = typeOf(rootBoard.pieceOn(fromSq(move)));
-            (ss+1)->pv[0] = NOMOVE;
-            rootBoard.makeMove(move, &st);
-            if (movesSearched == 0) {
-                currValue= -search(ss+1, rootBoard, -beta, -alpha, depth-1, true);
-            } else {
-                currValue = -search(ss+1, rootBoard, -(alpha+1), -alpha, depth-1, false);
-                if (currValue > alpha && currValue < beta) {
-                    currValue = -search(ss+1, rootBoard, -beta, -alpha, depth-1, true);
-                }
-            }
-            rootBoard.undoMove(move);
 
-            if (threads.stop) return;
+        alpha = aspirationSearch(ss, rootBoard, alpha, depth);
 
-            if (currValue > alpha) {
-                alpha = currValue;
-                best = move;
-                updatePV(ss->pv, move, (ss+1)->pv);
-            }
-            movesSearched++;
-        }
-        
+        if (threads.stop) return;
+
         for (int i = 0; ss->pv[i] != NOMOVE && i < MAXPLY; i++) {
             bestPv[i] = ss->pv[i];
         }
+
         bestScore = alpha;
         bestDepth = depth;
 
@@ -111,10 +78,23 @@ void Worker::iterativeDeepening() {
 
         SearchInfo si;
         si.depth = bestDepth;
-        si.score = bestScore;
+        si.seldepth = selDepth;
         si.pv = bestPv;
         si.nodes = nodesSearched;
         si.nps = nps;
+        si.timeMs = elapsedMs;
+        si.isMate = std::abs(bestScore) >= VALUEMATEINMAX;
+        if (si.isMate) {
+            if (bestScore > 0) {
+                si.score = (VALUEMATE - bestScore + 1) / 2;
+            } else {
+                si.score = (VALUEMATE + bestScore + 1) / 2;
+            }
+
+        } else {
+            si.score = bestScore;
+        }
+        
 
         if (threadID == 0) {
             threads.fireInfo(si);
@@ -126,7 +106,89 @@ void Worker::iterativeDeepening() {
     }
 }
 
-int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth, bool pvNode) {
+Value Worker::aspirationSearch(SearchStack* ss, Board& board, Value prevScore, int depth) {
+    if (std::abs(prevScore) >= VALUEMATEINMAX) {
+        return rootSearch(ss, board, -VALUEINFINITE, VALUEINFINITE, depth);
+    }
+
+    Value delta = 30;
+    Value alpha = prevScore - delta;
+    Value beta  = prevScore + delta;
+
+    alpha = std::max(alpha, -VALUEINFINITE);
+    beta  = std::min(beta,  VALUEINFINITE);
+
+    while (true) {
+        Value val = rootSearch(ss, board, alpha, beta, depth);
+        if (threads.stop)
+            return 0;
+
+        if (val <= alpha) {
+            alpha = std::max(val - delta, -VALUEINFINITE);
+        }
+        else if (val >= beta) {
+            beta = std::min(val + delta, VALUEINFINITE);
+        }
+        else {
+            return val;
+        }
+
+        delta *= 2;
+    }
+}
+
+Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta, int depth) {
+    Move pv[MAXPLY];
+    (ss+1)->pv = pv;
+
+    State st;
+    Move move;
+    Move best = NOMOVE;
+    Value currValue = 0;
+    Value topScore = -VALUEINFINITE;
+    int movesSearched = 0;
+
+    MoveSelector ms = MoveSelector(bestPv[0], board, true, ss, history);
+    
+    while ((move = ms.selectMove()) != NOMOVE) {
+        if (!board.legalMove(move)) continue;
+        ss->current = move;
+        ss->movedPT = typeOf(board.pieceOn(fromSq(move)));
+        
+        board.makeMove(move, &st);
+        if (movesSearched == 0) {
+            (ss+1)->pv[0] = NOMOVE;
+            currValue= -search(ss+1, board, -beta, -alpha, depth-1, true);
+        } else {
+            (ss+1)->pv[0] = NOMOVE;
+            currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1, false);
+            if (currValue > alpha && currValue < beta) {
+                (ss+1)->pv[0] = NOMOVE;
+                currValue = -search(ss+1, board, -beta, -alpha, depth-1, true);
+            }
+        }
+        board.undoMove(move);
+
+        if (threads.stop) return 0;
+
+        if (currValue >= beta) {
+            return currValue;
+        }
+
+        if (currValue > topScore) {
+            topScore = currValue;
+            if (currValue > alpha) {
+                alpha = currValue;
+                best = move;
+                updatePV(ss->pv, move, (ss+1)->pv);
+            }
+        }
+        movesSearched++;
+    }
+    return topScore;
+}
+
+Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth, bool pvNode) {
     nodesSearched++;
 
     if (((nodesSearched & CHECKFREQ) == 0) && (threadID == 0) && checkMainWorker()) {
@@ -195,13 +257,23 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
         if (!board.legalMove(move)) continue;
         ss->current = move;
         ss->movedPT = typeOf(board.pieceOn(fromSq(move)));
-        (ss+1)->pv[0] = NOMOVE;
-        board.makeMove(move, &st);
+        bool doLMR = !board.checkers() && depth > 2 && movesSearched > 3 && !board.givesCheck(move) && ms.currentStage() != GoodCaptures; 
+        board.makeMove(move, &st); 
         if (movesSearched == 0) {
+            (ss+1)->pv[0] = NOMOVE;
             currValue= -search(ss+1, board, -beta, -alpha, depth-1, pvNode);
         } else {
-            currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1, false);
-            if (pvNode && currValue > alpha && currValue < beta) {
+            (ss+1)->pv[0] = NOMOVE;
+            int r = doLMR ? calcReduction(move, depth, movesSearched, pvNode) : 0;
+            currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1-r, false);
+
+            if (!pvNode && currValue > alpha && r != 0) {
+                (ss+1)->pv[0] = NOMOVE;
+                currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1, false);
+            }
+
+            if (pvNode && currValue > alpha) {
+                (ss+1)->pv[0] = NOMOVE;
                 currValue = -search(ss+1, board, -beta, -alpha, depth-1, true);
             }
         }
@@ -237,7 +309,7 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
     
     if (movesSearched==0) {
         if (board.checkers()) {
-            return -VALUEINFINITE + ss->ply;
+            return -VALUEMATE + ss->ply;
         } else {
             return VALUEDRAW;
         }
@@ -248,8 +320,9 @@ int Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth
     return topScore;
 }
 
-int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
+Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     nodesSearched++;
+    if (ss->ply > selDepth) selDepth = ss->ply;
 
     if (((nodesSearched & CHECKFREQ) == 0) && (threadID == 0) && checkMainWorker()) {
         threads.stop = true;
@@ -359,7 +432,7 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
         
     }
 
-    if (movesSearched == 0 && board.checkers()) return -VALUEINFINITE + ss->ply;
+    if (movesSearched == 0 && board.checkers()) return -VALUEMATE + ss->ply;
 
     Bound b = raisedAlpha ? EXACT : UPPER;
     ttWriter.write(board.key(), topMove, NOVALUE, toTTScore(topScore, ss->ply), 0, tt.currentGeneration(), b);
@@ -367,45 +440,65 @@ int Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     return topScore;
 }
 
-    void Worker::updateHistories(Board& board, SearchStack* ss, SearchedMoves<SEARCHEDLISTCAP>& searchedCaptures, SearchedMoves<SEARCHEDLISTCAP>& searchedQuiets, Move bestMove, int depth) {
-        int bonus = depth * depth;
-        int malus = bonus / 4;
+int Worker::calcReduction(Move move, int depth, int moveCount, bool pvNode) {
+    if (depth < 3 || moveCount < 4) return 0;
 
-        if (!board.captureGenType(bestMove)) {
-            updateMainHistory(board, bestMove, bonus);
-            updateContHistory(board, ss, bestMove, bonus);
+    int r = 1;
 
-            for (Move m : searchedQuiets) {
-                updateMainHistory(board, m, -malus);
-                updateContHistory(board, ss, m, -malus);
-            }
-        } else {
-            updateCaptureHistory(board, bestMove, bonus);
+    if (depth >= 8) r++;
+
+    if (depth >= 12) r++;
+
+    if (moveCount >= 8) r++;
+
+    if (moveCount >= 16) r++;
+
+    if (pvNode) r--;
+
+    if (r < 0) r = 0;
+
+    return r;
+}
+
+void Worker::updateHistories(Board& board, SearchStack* ss, SearchedMoves<SEARCHEDLISTCAP>& searchedCaptures, SearchedMoves<SEARCHEDLISTCAP>& searchedQuiets, Move bestMove, int depth) {
+    int bonus = depth * depth;
+    int malus = bonus / 4;
+
+    if (!board.captureGenType(bestMove)) {
+        updateMainHistory(board, bestMove, bonus);
+        updateContHistory(board, ss, bestMove, bonus);
+
+        for (Move m : searchedQuiets) {
+            updateMainHistory(board, m, -malus);
+            updateContHistory(board, ss, m, -malus);
         }
-
-        for (Move m : searchedCaptures) {
-            updateCaptureHistory(board, m, -malus);
-        }
+    } else {
+        updateCaptureHistory(board, bestMove, bonus);
     }
 
-    void Worker::updateMainHistory(Board& board, Move move, int reward) {
-        Colour us = board.sideToMove();
-        history.mainHist(board.sideToMove(), typeOf(board.pieceOn(fromSq(move))), fromSq(move), toSq(move)) += reward;
+    for (Move m : searchedCaptures) {
+        updateCaptureHistory(board, m, -malus);
+    }
+}
+
+void Worker::updateMainHistory(Board& board, Move move, int reward) {
+    Colour us = board.sideToMove();
+    history.mainHist(board.sideToMove(), typeOf(board.pieceOn(fromSq(move))), fromSq(move), toSq(move)) += reward;
+}
+
+void Worker::updateCaptureHistory(Board& board, Move move, int reward) {
+    history.capHist(typeOf(board.pieceOn(fromSq(move))), toSq(move), typeOf(board.pieceOn(toSq(move)))) += reward;
+}
+
+void Worker::updateContHistory(Board& board, SearchStack* ss, Move move, int reward) {
+    if (ss->ply >= 1 && (ss-1)->current != NOMOVE) {
+        history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward;
     }
 
-    void Worker::updateCaptureHistory(Board& board, Move move, int reward) {
-        history.capHist(typeOf(board.pieceOn(fromSq(move))), toSq(move), typeOf(board.pieceOn(toSq(move)))) += reward;
+    if (ss->ply >= 2 && (ss-2)->current != NOMOVE) {
+        history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward; 
     }
-
-    void Worker::updateContHistory(Board& board, SearchStack* ss, Move move, int reward) {
-        if (ss->ply >= 1 && (ss-1)->current != NOMOVE) {
-            history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward;
-        }
-
-        if (ss->ply >= 2 && (ss-2)->current != NOMOVE) {
-            history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward; 
-        }
-    }
+}
 
 
 void Worker::updatePV(Move* pv, Move move, Move* childPv) {

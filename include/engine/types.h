@@ -18,6 +18,10 @@ inline bool isLoss(Value val) {
     return val <= -VALUEMATEINMAX;
 }
 
+inline bool isWin(Value val) {
+    return val >= VALUEMATEINMAX;
+}
+
 inline bool isMateScore(Value s) {
     return s >= VALUEMATEINMAX || s <= -VALUEMATEINMAX;
 }

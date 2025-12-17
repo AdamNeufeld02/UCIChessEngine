@@ -13,6 +13,9 @@
 
 
 namespace engine {
+
+class ThreadPool;
+
 class Thread {
 public:
     Thread(SharedState& st, size_t n, size_t total);
@@ -23,6 +26,11 @@ public:
     void clearWorker();
 
     void waitForSearch();
+
+    Move getBestMove();
+    int getBestDepth();
+    int getBestScore();
+    int getPVLength();
 
     size_t idx;
 private:
@@ -43,7 +51,7 @@ public:
     ThreadPool();
     void startSearching(const Board& board, const SearchLimits sl);
     void clearThreads();
-    Thread* getBestThread();
+    Move voteBestMove();
     size_t numThreads();
     void set(size_t nThreads, TranspositionTable& tt);
     void waitForAllThreads();

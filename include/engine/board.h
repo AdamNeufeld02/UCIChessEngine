@@ -24,6 +24,7 @@ struct State{
     Piece captured;
     Bitboard blockersForKing[COLOURNB];
     Bitboard pinners[COLOURNB];
+    Bitboard checkSquares[PIECETYPECOUNT];
     Bitboard checkers;
     int repetitionCount;
     State* previous;
@@ -54,6 +55,7 @@ public:
 
     void updateChecksAndPins(Colour col);
     Bitboard getAttackers(Square sq, Colour col, Bitboard occ) const;
+    Bitboard checkSquares(PieceType pt) const;
     void updateKingBlockers(Colour col);
 
     void putPiece(Piece pc, Square sq);
@@ -62,10 +64,11 @@ public:
 
     void calcZobristHashFromScratch();
 
-    bool seeThreshold(Move move, int thresh);
+    bool seeThreshold(Move move, int thresh) const;
 
     bool legalMove(Move move) const;
     bool pseudoLegalMove(Move move) const;
+    bool givesCheck(Move move) const;
     bool isCapture(Move move) const;
     bool captureGenType(Move move) const;
     bool nonPawnMaterial(Colour col) const;
@@ -120,6 +123,10 @@ inline Square Board::kingSquare(Colour col) const {
 
 inline Bitboard Board::checkers() const {
     return st->checkers;
+}
+
+inline Bitboard Board::checkSquares(PieceType pt) const {
+    return st->checkSquares[pt];
 }
 
 inline Bitboard Board::pinners(Colour col) const {

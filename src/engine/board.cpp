@@ -37,6 +37,14 @@ void Board::initRootState(State* rootState) {
     rootState->checkers = 0ULL;
     rootState->blockersForKing[WHITE] = 0ULL;
     rootState->blockersForKing[BLACK] = 0ULL;
+    rootState->pinners[WHITE] = 0ULL;
+    rootState->pinners[BLACK] = 0ULL;
+    rootState->checkSquares[PAWN] = 0ULL;
+    rootState->checkSquares[KNIGHT] = 0ULL;
+    rootState->checkSquares[BISHOP] = 0ULL;
+    rootState->checkSquares[ROOK] = 0ULL;
+    rootState->checkSquares[QUEEN] = 0ULL;
+    rootState->checkSquares[KING] = 0ULL;
     rootState->epSquare = NOSQUARE;
     rootState->halfmoveClock = 0;
     rootState->fullmoveNumber = 1;
@@ -343,6 +351,48 @@ void Board::updateChecksAndPins(Colour col) {
     st->checkers = getAttackers(kingSquare(col), ~col, allPieces);
     updateKingBlockers(WHITE);
     updateKingBlockers(BLACK);
+
+    Square ksq = kingSquare(~sideToMove());
+
+    st->checkSquares[PAWN] = pawnAttacks[ksq][~sideToMove()];
+    st->checkSquares[KNIGHT] = genAttacksBB<KNIGHT>(ksq, pieces());
+    st->checkSquares[BISHOP] = genAttacksBB<BISHOP>(ksq, pieces());
+    st->checkSquares[ROOK] = genAttacksBB<ROOK>(ksq, pieces());
+    st->checkSquares[QUEEN] = st->checkSquares[BISHOP] | st->checkSquares[ROOK];
+    st->checkSquares[KING] = 0;
+}
+
+bool Board::givesCheck(Move move) const {
+    Square from = fromSq(move);
+    Square to = toSq(move);
+    Flags flag = moveFlag(move);
+
+    // Straight check
+    if (checkSquares(typeOf(pieceOn(from))) & bit(to)) return true;
+
+    // discovered check
+    if (st->blockersForKing[~sideToMove()] & bit(from)) {
+        return (!(lineBB[from][to] & pieces(~sideToMove(), KING)) || (flag == CASTLE));
+    }
+
+    if (flag == NOFLAG) {
+        return false;
+    } else if (flag == ENPASSANT) {
+        Square capSq = sideToMove() == WHITE ? to + SOUTH : to + NORTH;
+        Bitboard occ = (pieces() ^ bit(from) ^ bit(capSq)) | bit(to);
+        return (genAttacksBB<BISHOP>(kingSquare(~sideToMove()), occ) & (pieces(sideToMove(), BISHOP) | pieces(sideToMove(), QUEEN))) |
+               (genAttacksBB<ROOK>(kingSquare(~sideToMove()), occ) & (pieces(sideToMove(), ROOK) | pieces(sideToMove(), QUEEN)));
+    } else if (flag == PROMOTION) {
+        return genAttacksBB(promoPiece(move), to, pieces() ^ bit(from) | bit(to)) & pieces(~sideToMove(), KING);
+    } else {
+        Square rookSq;
+        if (to > from) {
+            rookSq = static_cast<Square>(to - 1);
+        } else {
+            rookSq = static_cast<Square>(to + 1);
+        }
+        return checkSquares(ROOK) & bit(rookSq);
+    }
 }
 
 bool Board::pseudoLegalMove(Move move) const {
@@ -437,7 +487,7 @@ bool Board::legalMove(Move move) const {
     return !(st->blockersForKing[us] & bit(from)) || (lineBB[from][to] & pieces(us, KING));
 }
 
-bool Board::seeThreshold(Move move, int thresh) {
+bool Board::seeThreshold(Move move, int thresh) const {
     if (moveFlag(move) != NOFLAG) return true;
 
     Square from = fromSq(move);

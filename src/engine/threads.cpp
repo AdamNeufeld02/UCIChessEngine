@@ -1,4 +1,5 @@
 #include "engine/threads.h"
+#include <unordered_map>
 
 namespace engine {
 
@@ -60,6 +61,31 @@ void Thread::clearWorker() {
     worker.clear();
 }
 
+Move Thread::getBestMove() {
+    std::lock_guard<std::mutex> lk(mutex);
+    return worker.bestPv[0];
+}
+
+int Thread::getBestDepth() {
+    std::lock_guard<std::mutex> lk(mutex);
+    return worker.bestDepth;
+}
+
+int Thread::getBestScore() {
+    std::lock_guard<std::mutex> lk(mutex);
+    return worker.bestScore;
+}
+
+int Thread::getPVLength() {
+    std::lock_guard<std::mutex> lk(mutex);
+    int pvLength = 0;
+    for (int i = 0; i < MAXMOVES; i++) {
+        if (worker.bestPv[i] == NOMOVE) break;
+        pvLength++;
+    }
+    return pvLength;
+}
+
 ThreadPool::ThreadPool()
 {
     stop = false;
@@ -102,9 +128,36 @@ void ThreadPool::clearThreads() {
     }
 }
 
-Thread* ThreadPool::getBestThread() {
-    if (threads.empty()) return nullptr;
-    return threads[0].get();
+Move ThreadPool::voteBestMove() {
+    Thread* bestThread = threads[0].get();
+    Value minScore = NOVALUE;
+
+    std::unordered_map<Move, int64_t> votes;
+
+    for (auto&& th : threads) {
+        minScore = std::min(minScore, th->getBestScore());
+    }
+
+    for (auto&& th : threads) {
+        votes[th->getBestMove()] += (th->getBestScore() - minScore + 14) * th->getBestDepth();
+    }
+
+    for (auto&& th : threads) {
+        int bestThreadScore = bestThread->getBestScore();
+        int newThreadScore = th->getBestScore();
+
+        int bestThreadVotingScore = votes[bestThread->getBestMove()];
+        int newThreradVotingScore = votes[th->getBestMove()];
+
+        if (isWin(bestThreadScore) || isLoss(bestThreadScore)) {
+            if (newThreadScore > bestThreadScore) {
+                bestThread = th.get();
+            }
+        } else if (newThreradVotingScore > bestThreadVotingScore || (newThreradVotingScore == bestThreadVotingScore && th->getPVLength() > bestThread->getPVLength())) {
+            bestThread = th.get();
+        }
+    }
+    return bestThread->getBestMove();
 }
 
 size_t ThreadPool::numThreads() {

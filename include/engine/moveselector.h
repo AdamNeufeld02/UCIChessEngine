@@ -36,6 +36,8 @@ public:
     template<GenType Type>
     void score();
 
+    Stage currentStage() const;
+
 
 private:
     Move pickBest(ScoredMove* end);
@@ -63,6 +65,10 @@ inline ScoredMove* MoveSelector::eraseMove(ScoredMove* first, ScoredMove* last, 
         }
     }
     return last;
+}
+
+inline Stage MoveSelector::currentStage() const {
+    return stage;
 }
 
 }

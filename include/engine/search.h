@@ -60,6 +60,8 @@ public:
     void clear();
 
     void iterativeDeepening();
+    Value aspirationSearch(SearchStack* ss, Board& board, Value center, int depth);
+    Value rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta, int depth);
     Value search(SearchStack* ss, Board& board, Value alpha, Value beta, int depth, bool pvNode);
     Value qsearch(SearchStack* ss, Board& board, Value alpha, Value beta);
 
@@ -78,6 +80,8 @@ private:
     void updateMainHistory(Board& board, Move move, int reward);
     void updateCaptureHistory(Board& board, Move move, int reward);
 
+    int calcReduction(Move move, int depth, int moveCount, bool pvNode);
+
     ThreadPool& threads;
     TranspositionTable& tt;
     History history;
@@ -90,7 +94,10 @@ private:
     Value bestScore;
     std::chrono::steady_clock::time_point startTime;
     int bestDepth;
+    int selDepth;
     int nodesSearched;
+
+    friend class Thread;
 };
 
 }
