@@ -74,7 +74,7 @@ void UCIEngine::cmdUci() {
     std::cout << "id name MyEngine 0.1\n";
     std::cout << "id author Adam\n";
 
-    std::cout << "option name Hash type spin default 16 min 1 max 1024\n";
+    std::cout << "option name Hash type spin default 64 min 1 max 1024\n";
 
     std::cout << "uciok\n";
     std::cout.flush();
