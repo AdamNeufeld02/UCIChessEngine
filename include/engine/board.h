@@ -38,8 +38,8 @@ public:
     Piece board[SQUARECOUNT];
     Colour colToMove;
     State* st;
-    int material[PHASENB][COLOURNB];
-    int psqtv[PHASENB][COLOURNB];
+    Score material[COLOURNB];
+    Score psqtv[COLOURNB];
 
 
 public:
@@ -75,6 +75,8 @@ public:
 
     bool isDraw() const;
     bool isRepetitionDraw() const;
+
+    bool onOpenFile(Colour col, Square sq) const;
 
     // Accessors
     Piece pieceOn(Square sq) const;
@@ -145,6 +147,10 @@ inline bool Board::castlingBlocked(CastlingRight cr) const {
     return allPieces & castleMasks[cr];
 }
 
+inline bool Board::onOpenFile(Colour col, Square sq) const {
+    return !(pieces(col, PAWN) & fileBB[sq & 7]);
+}
+
 inline Square Board::epSquare() const {
     return st->epSquare;
 }
@@ -183,10 +189,8 @@ inline void Board::putPiece(Piece pc, Square sq) {
 
     PieceType pt = typeOf(pc);
     Square mirrored = mirrorSquareIfBlack(sq, col);
-    material[PHASEMG][col] += W.material[PHASEMG][pt];
-    material[PHASEEG][col] += W.material[PHASEEG][pt];
-    psqtv[PHASEMG][col] += W.psqt[PHASEMG][pt][mirrored];
-    psqtv[PHASEEG][col] += W.psqt[PHASEEG][pt][mirrored];
+    material[col] += W.material[pt];
+    psqtv[col] += W.psqt[pt][mirrored];
 }
 
 inline void Board::removePiece(Square sq) {
@@ -200,10 +204,8 @@ inline void Board::removePiece(Square sq) {
 
     PieceType pt = typeOf(pc);
     Square mirrored = mirrorSquareIfBlack(sq, col);
-    material[PHASEMG][col] -= W.material[PHASEMG][pt];
-    material[PHASEEG][col] -= W.material[PHASEEG][pt];
-    psqtv[PHASEMG][col] -= W.psqt[PHASEMG][pt][mirrored];
-    psqtv[PHASEEG][col] -= W.psqt[PHASEEG][pt][mirrored];
+    material[col] -= W.material[pt];
+    psqtv[col] -= W.psqt[pt][mirrored];
 }
 
 inline void Board::movePiece(Square from, Square to) {
@@ -220,9 +222,7 @@ inline void Board::movePiece(Square from, Square to) {
     Square mirroredFrom = mirrorSquareIfBlack(from, col);
     Square mirroredTo = mirrorSquareIfBlack(to, col);
 
-    psqtv[PHASEMG][col] -= W.psqt[PHASEMG][pt][mirroredFrom];
-    psqtv[PHASEEG][col] -= W.psqt[PHASEEG][pt][mirroredFrom];
-    psqtv[PHASEMG][col] += W.psqt[PHASEMG][pt][mirroredTo];
-    psqtv[PHASEEG][col] += W.psqt[PHASEEG][pt][mirroredTo];
+    psqtv[col] -= W.psqt[pt][mirroredFrom];
+    psqtv[col] += W.psqt[pt][mirroredTo];
 }
 }

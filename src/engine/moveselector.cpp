@@ -31,12 +31,12 @@ void MoveSelector::score() {
             int MVV = 0;
             int captHist = 0;
             if (flag == ENPASSANT) {
-                MVV = W.material[PHASEMG][PAWN];
+                MVV = W.material[PAWN].mg;
                 captHist = history.capHist(pt, to, PAWN);
             } else {
                 PieceType cap = typeOf(board.pieceOn(to));
                 captHist = history.capHist(pt, to, cap);
-                MVV = W.material[PHASEMG][cap];
+                MVV = W.material[cap].mg;
             }
             if (Type == GEN_EVASIONS) {
                 p->score = MVV_SCALE * MVV + CAPT_HIST_SCALE * captHist + (1 << 15);

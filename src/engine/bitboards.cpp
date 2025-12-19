@@ -18,6 +18,7 @@ Bitboard bishopAttackTable[BISHOP_ATTACK_TABLE_SIZE];
 Bitboard betweenBB[SQUARECOUNT][SQUARECOUNT];
 Bitboard lineBB[SQUARECOUNT][SQUARECOUNT];
 Bitboard castleMasks[BlackQueenSide + 1];
+Bitboard aheadMask[COLOURNB][SQUARECOUNT];
 
 namespace bb {
 
@@ -27,6 +28,8 @@ void init(){
         pawnAttacks[BLACK][i] = computePawnAttacks(static_cast<Square>(i), BLACK);
         knightAttacks[i] = computeKnightAttacks(static_cast<Square>(i));
         kingAttacks[i] = computeKingAttacks(static_cast<Square>(i));
+        aheadMask[WHITE][i] = aheadFileMask(static_cast<Square>(i), WHITE);
+        aheadMask[BLACK][i] = aheadFileMask(static_cast<Square>(i), BLACK);
     }
     initMagicBitboards();
     initBetweenBBAndLineBB();
@@ -65,6 +68,17 @@ void initBetweenBBAndLineBB() {
             betweenBB[sq1][sq2] = between;
             lineBB[sq1][sq2] = line;
         }
+    }
+}
+
+inline Bitboard aheadFileMask(Square sq, Colour col) {
+    const int f = sq & 7;
+    const int r = sq >> 3;
+    Bitboard file = fileBB[f];
+    if (col == WHITE) {
+        return file << (8 * (r + 1));
+    } else {
+        return file >> (8 * (8 - r));
     }
 }
 

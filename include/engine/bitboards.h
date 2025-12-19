@@ -19,6 +19,20 @@ constexpr Bitboard FileFBB = FileABB << 5;
 constexpr Bitboard FileGBB = FileABB << 6;
 constexpr Bitboard FileHBB = FileABB << 7;
 
+constexpr Bitboard fileBB[8] = {FileABB, FileBBB, FileCBB, FileDBB, FileEBB, FileFBB, FileGBB, FileHBB};
+
+constexpr Bitboard neighborFiles[8] = {FileBBB, 
+                                       FileABB | FileCBB, 
+                                       FileBBB | FileDBB, 
+                                       FileCBB | FileEBB, 
+                                       FileDBB | FileFBB, 
+                                       FileEBB | FileGBB,
+                                       FileFBB | FileHBB,
+                                       FileGBB
+                                    };
+
+extern Bitboard aheadMask[COLOURNB][SQUARECOUNT];
+
 constexpr Bitboard Rank1BB = 0xFF;
 constexpr Bitboard Rank2BB = Rank1BB << (8 * 1);
 constexpr Bitboard Rank3BB = Rank1BB << (8 * 2);
@@ -27,6 +41,8 @@ constexpr Bitboard Rank5BB = Rank1BB << (8 * 4);
 constexpr Bitboard Rank6BB = Rank1BB << (8 * 5);
 constexpr Bitboard Rank7BB = Rank1BB << (8 * 6);
 constexpr Bitboard Rank8BB = Rank1BB << (8 * 7);
+
+constexpr Bitboard rankBB[8] = {Rank1BB, Rank2BB, Rank3BB, Rank4BB, Rank5BB, Rank6BB, Rank7BB, Rank8BB};
 
 extern Magic rookMagics[SQUARECOUNT];
 extern Magic bishopMagics[SQUARECOUNT];
@@ -69,6 +85,14 @@ inline int squarescan_lsb(Bitboard& b) {
     int sq = __builtin_ctzll(b);
     b &= (b - 1);
     return sq;
+}
+
+inline int getFrontMost(Colour col, Bitboard bb) {
+    return col == WHITE ? msb(bb) : lsb(bb);
+}
+
+inline int getRearMost(Colour col, Bitboard bb) {
+    return col == WHITE ? lsb(bb) : msb(bb);
 }
 
 template<Direction Dir>
@@ -134,6 +158,8 @@ namespace bb {
 
     template<Direction... Dirs>
     constexpr Bitboard stepInDirections(Bitboard bb);
+
+    Bitboard aheadFileMask(Square sq, Colour col);
 
     Bitboard rookMask(Square sq);
     Bitboard bishopMask(Square sq);

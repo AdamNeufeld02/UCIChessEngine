@@ -80,7 +80,7 @@ private:
     void updateMainHistory(Board& board, Move move, int reward);
     void updateCaptureHistory(Board& board, Move move, int reward);
 
-    int calcReduction(Move move, int depth, int moveCount, bool pvNode);
+    int calcReduction(int depth, int moveCount, bool pvNode);
 
     ThreadPool& threads;
     TranspositionTable& tt;

@@ -31,7 +31,6 @@ void Worker::startSearching() {
     threads.decrementActive();
     if (threadID == 0) {
         threads.waitForOthers(threadID);
-        // For now just return information on self search don't consider other threads
         Move best = threads.voteBestMove();
         threads.fireBestMove(best, bestScore, bestDepth, bestPv);
     }
@@ -143,7 +142,6 @@ Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta,
 
     State st;
     Move move;
-    Move best = NOMOVE;
     Value currValue = 0;
     Value topScore = -VALUEINFINITE;
     int movesSearched = 0;
@@ -179,7 +177,6 @@ Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta,
             topScore = currValue;
             if (currValue > alpha) {
                 alpha = currValue;
-                best = move;
                 updatePV(ss->pv, move, (ss+1)->pv);
             }
         }
@@ -251,7 +248,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     SearchedMoves<SEARCHEDLISTCAP> searchedCaptures;
     Move move;
     Move topMove = NOMOVE;
-    int alphaOrig = alpha;
 
     while ((move = ms.selectMove()) != NOMOVE) {
         if (!board.legalMove(move)) continue;
@@ -264,7 +260,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
             currValue= -search(ss+1, board, -beta, -alpha, depth-1, pvNode);
         } else {
             (ss+1)->pv[0] = NOMOVE;
-            int r = doLMR ? calcReduction(move, depth, movesSearched, pvNode) : 0;
+            int r = doLMR ? calcReduction(depth, movesSearched, pvNode) : 0;
             currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1-r, false);
 
             if (!pvNode && currValue > alpha && r != 0) {
@@ -387,8 +383,8 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
         // pruning
         if (!board.checkers()) {
             if (board.captureGenType(move)) {
-                Value captVal = moveFlag(move) == ENPASSANT ? PAWN : W.material[PHASEMG][typeOf(board.pieceOn(toSq(move)))];
-                Value promVal = moveFlag(move) == PROMOTION ? W.material[PHASEMG][promoPiece(move)] - W.material[PHASEMG][PAWN] : 0;
+                Value captVal = moveFlag(move) == ENPASSANT ? PAWN : W.material[typeOf(board.pieceOn(toSq(move)))].mg;
+                Value promVal = moveFlag(move) == PROMOTION ? W.material[promoPiece(move)].mg - W.material[PAWN].mg : 0;
 
                 // delta pruning
                 if (standPat + captVal + promVal + 164 <= alpha) continue;
@@ -440,7 +436,7 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     return topScore;
 }
 
-int Worker::calcReduction(Move move, int depth, int moveCount, bool pvNode) {
+int Worker::calcReduction(int depth, int moveCount, bool pvNode) {
     if (depth < 3 || moveCount < 4) return 0;
 
     int r = 1;
@@ -482,7 +478,6 @@ void Worker::updateHistories(Board& board, SearchStack* ss, SearchedMoves<SEARCH
 }
 
 void Worker::updateMainHistory(Board& board, Move move, int reward) {
-    Colour us = board.sideToMove();
     history.mainHist(board.sideToMove(), typeOf(board.pieceOn(fromSq(move))), fromSq(move), toSq(move)) += reward;
 }
 

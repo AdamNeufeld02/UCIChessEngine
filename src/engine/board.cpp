@@ -22,11 +22,9 @@ void Board::initFields() {
     colToMove = WHITE;
     st = nullptr;
 
-    for (int i = 0; i < PHASENB; i ++) {
-        for (int j = 0; j < COLOURNB; j++) {
-            material[i][j] = 0;
-            psqtv[i][j] = 0;
-        }
+    for (int j = 0; j < COLOURNB; j++) {
+        material[j] = { 0, 0 };
+        psqtv[j] = { 0, 0 };
     }
 }
 
@@ -493,11 +491,11 @@ bool Board::seeThreshold(Move move, int thresh) const {
     Square from = fromSq(move);
     Square to = toSq(move);
 
-    int exchange = W.material[PHASEMG][typeOf(pieceOn(to))] - thresh;
+    int exchange = W.material[typeOf(pieceOn(to))].mg - thresh;
 
     if (exchange < 0) return false;
 
-    exchange = W.material[PHASEMG][typeOf(pieceOn(from))] - exchange;
+    exchange = W.material[typeOf(pieceOn(from))].mg - exchange;
 
     if (exchange <= 0) return true;
 
@@ -523,26 +521,26 @@ bool Board::seeThreshold(Move move, int thresh) const {
         // If at any point we can stop capturing and are above or at the threshold return true
         // If at any point they can stop capturing and we are below the threshold return false
         if ((bb = stmAttackers & pieces(stm, PAWN))) {
-            if ((exchange = W.material[PHASEMG][PAWN] - exchange) < res) break;
+            if ((exchange = W.material[PAWN].mg - exchange) < res) break;
 
             occ ^= bit(static_cast<Square>(lsb(bb)));
             attackers |= genAttacksBB<BISHOP>(to, occ) & (pieces(BISHOP) | pieces(QUEEN));
         } else if ((bb = stmAttackers & pieces(stm, KNIGHT))) {
-            if ((exchange = W.material[PHASEMG][KNIGHT] - exchange) < res) break;
+            if ((exchange = W.material[KNIGHT].mg - exchange) < res) break;
 
             occ ^= bit(static_cast<Square>(lsb(bb)));
         } else if ((bb = stmAttackers & pieces(stm, BISHOP))) {
-            if ((exchange = W.material[PHASEMG][BISHOP] - exchange) < res) break;
+            if ((exchange = W.material[BISHOP].mg - exchange) < res) break;
 
             occ ^= bit(static_cast<Square>(lsb(bb)));
             attackers |= genAttacksBB<BISHOP>(to, occ) & (pieces(BISHOP) | pieces(QUEEN));
         } else if ((bb = stmAttackers & pieces(stm, ROOK))) {
-            if ((exchange = W.material[PHASEMG][ROOK] - exchange) < res) break;
+            if ((exchange = W.material[ROOK].mg - exchange) < res) break;
 
             occ ^= bit(static_cast<Square>(lsb(bb)));
             attackers |= genAttacksBB<ROOK>(to, occ) & (pieces(ROOK) | pieces(QUEEN));
         } else if ((bb = stmAttackers & pieces(stm, QUEEN))) {
-            if ((exchange = W.material[PHASEMG][QUEEN] - exchange) < res) break;
+            if ((exchange = W.material[QUEEN].mg - exchange) < res) break;
 
             occ ^= bit(static_cast<Square>(lsb(bb)));
             attackers |= genAttacksBB<BISHOP>(to, occ) & (pieces(BISHOP) | pieces(QUEEN));
