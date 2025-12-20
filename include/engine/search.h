@@ -81,6 +81,9 @@ private:
     void updateCaptureHistory(Board& board, Move move, int reward);
 
     int calcReduction(int depth, int moveCount, bool pvNode);
+    Value rfpMargin(int depth);
+    Value razorMargin(int depth);
+    Value futilityMargin(int depth);
 
     ThreadPool& threads;
     TranspositionTable& tt;

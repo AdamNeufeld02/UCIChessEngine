@@ -221,6 +221,22 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         staticEval = evaluate(board);
     }
 
+    // Reverse Futility Pruning
+    if (!pvNode && !board.checkers() && depth <= 7) {
+        Value margin = rfpMargin(depth);
+        if (staticEval - margin >= beta) {
+            return staticEval;
+        }
+    }
+
+    // Razoring
+    if (!pvNode && !board.checkers() && depth <= 2) {
+        Value margin = razorMargin(depth);
+        if (staticEval + margin <= alpha) {
+            return qsearch(ss, board, alpha, beta);
+        }
+    }
+
     State st;
 
     if (!pvNode && ((ss-1)->current != NOMOVE) && staticEval >= beta && !board.checkers() && board.nonPawnMaterial(board.sideToMove()) && depth >= 3){
@@ -251,9 +267,21 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
     while ((move = ms.selectMove()) != NOMOVE) {
         if (!board.legalMove(move)) continue;
+
+        bool isQuiet = !board.captureGenType(move);
+        bool givesCheck = board.givesCheck(move);
+
+        // Futility pruning
+        if (!pvNode && !board.checkers() && depth <= 2 && isQuiet && !givesCheck && movesSearched > 1) {
+            Value margin = futilityMargin(depth);
+            if (staticEval + margin <= alpha) {
+                continue;
+            }
+        }
+
         ss->current = move;
         ss->movedPT = typeOf(board.pieceOn(fromSq(move)));
-        bool doLMR = !board.checkers() && depth > 2 && movesSearched > 3 && !board.givesCheck(move) && ms.currentStage() != GoodCaptures; 
+        bool doLMR = !board.checkers() && depth > 2 && movesSearched > 3 && !givesCheck && isQuiet; 
         board.makeMove(move, &st); 
         if (movesSearched == 0) {
             (ss+1)->pv[0] = NOMOVE;
@@ -278,7 +306,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         if (threads.stop) return 0;
 
         if (movesSearched < SEARCHEDLISTCAP) {
-            if (board.captureGenType(move)) {
+            if (!isQuiet) {
                 searchedCaptures.pushBack(move);
             } else {
                 searchedQuiets.pushBack(move);
@@ -438,22 +466,26 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
 
 int Worker::calcReduction(int depth, int moveCount, bool pvNode) {
     if (depth < 3 || moveCount < 4) return 0;
-
     int r = 1;
-
     if (depth >= 8) r++;
-
     if (depth >= 12) r++;
-
     if (moveCount >= 8) r++;
-
     if (moveCount >= 16) r++;
-
     if (pvNode) r--;
-
     if (r < 0) r = 0;
-
     return r;
+}
+
+inline Value Worker::rfpMargin(int depth) {
+    return Value(80 + 50 * depth);
+}
+
+inline Value Worker::razorMargin(int depth) {
+    return Value(200 + 150 * depth);
+}
+
+inline Value Worker::futilityMargin(int depth) {
+    return Value(60 + 40 * depth + 30 * depth * depth);
 }
 
 void Worker::updateHistories(Board& board, SearchStack* ss, SearchedMoves<SEARCHEDLISTCAP>& searchedCaptures, SearchedMoves<SEARCHEDLISTCAP>& searchedQuiets, Move bestMove, int depth) {
