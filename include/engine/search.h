@@ -88,6 +88,7 @@ private:
     ThreadPool& threads;
     TranspositionTable& tt;
     History history;
+    Move killerMoves[MAXPLY][2];
     
 
     Board rootBoard;

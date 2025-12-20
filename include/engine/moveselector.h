@@ -11,6 +11,8 @@ enum Stage : uint8_t{
     TTMove,
     CapturesInit,
     GoodCaptures,
+    KillerMove1,
+    KillerMove2,
     QuietsInit,
     Quiets,
     BadCaptureinit,
@@ -24,12 +26,14 @@ static const int MVV_SCALE = 16;
 static const int CAPT_HIST_SCALE = 5;
 static const int MAIN_HIST_SCALE = 5;
 static const int CONT_HIST_1_SCALE = 12;
-static const int CONT_HIST_2_SCALE = 12;
+static const int CONT_HIST_2_SCALE = 10;
+static const int CONT_HIST_3_SCALE = 8;
+static const int CONT_HIST_4_SCALE = 6;
 
 
 class MoveSelector {
 public:
-    MoveSelector(Move ttm, Board& bd, bool quiets, SearchStack* ss, History& hist);
+    MoveSelector(Move ttm, Board& bd, bool quiets, SearchStack* ss, History& hist, Move* killers);
 
     Move selectMove();
 
@@ -47,6 +51,7 @@ private:
     Board& board;
     Stage stage;
     Move ttMove;
+    Move killerMoves[2];
     bool allowQuiets;
     ScoredMove* cur;
     ScoredMove* endCur;

@@ -39,6 +39,10 @@ void Worker::startSearching() {
 void Worker::clear() {
     std::fill(std::begin(bestPv), std::end(bestPv), NOMOVE);
     history.clear();
+    for (int i = 0; i < MAXPLY; i++) {
+        killerMoves[i][0] = NOMOVE;
+        killerMoves[i][1] = NOMOVE;
+    }
 }
 
 void Worker::iterativeDeepening() {
@@ -146,7 +150,7 @@ Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta,
     Value topScore = -VALUEINFINITE;
     int movesSearched = 0;
 
-    MoveSelector ms = MoveSelector(bestPv[0], board, true, ss, history);
+    MoveSelector ms = MoveSelector(bestPv[0], board, true, ss, history, killerMoves[ss->ply]);
     
     while ((move = ms.selectMove()) != NOMOVE) {
         if (!board.legalMove(move)) continue;
@@ -259,7 +263,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     Value currValue = 0;
     (ss+1)->pv = pv;
     int movesSearched = 0;
-    MoveSelector ms = MoveSelector(ttmove, board, true, ss, history);
+    MoveSelector ms = MoveSelector(ttmove, board, true, ss, history, killerMoves[ss->ply]);
     SearchedMoves<SEARCHEDLISTCAP> searchedQuiets;
     SearchedMoves<SEARCHEDLISTCAP> searchedCaptures;
     Move move;
@@ -317,6 +321,10 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         if (currValue >= beta) {
             ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
             updateHistories(board, ss, searchedCaptures, searchedQuiets, move, depth + QSEARCHHISTORYDEPTH);
+            if (isQuiet && killerMoves[ss->ply][0] != move) {
+                killerMoves[ss->ply][1] = killerMoves[ss->ply][0];
+                killerMoves[ss->ply][0] = move;
+            }
             return currValue;
         }
 
@@ -395,7 +403,7 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
 
     Value currValue = 0;
     int movesSearched = 0;
-    MoveSelector ms = MoveSelector(ttmove, board, false, ss, history);
+    MoveSelector ms = MoveSelector(ttmove, board, false, ss, history, killerMoves[ss->ply]);
     SearchedMoves<SEARCHEDLISTCAP> searchedQuiets;
     SearchedMoves<SEARCHEDLISTCAP> searchedCaptures;
     State st;
@@ -524,6 +532,14 @@ void Worker::updateContHistory(Board& board, SearchStack* ss, Move move, int rew
 
     if (ss->ply >= 2 && (ss-2)->current != NOMOVE) {
         history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward; 
+    }
+
+    if (ss->ply >= 3 && (ss-3)->current != NOMOVE) {
+        history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward; 
+    }
+
+    if (ss->ply >= 4 && (ss-4)->current != NOMOVE) {
+        history.cont3Hist((ss-4)->movedPT, toSq((ss-4)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward; 
     }
 }
 

@@ -4,9 +4,10 @@
 namespace engine
 {
 struct History {
-    // you can use int16_t if you want; int is fine while developing
     int cont1[PIECETYPECOUNT][SQUARECOUNT][PIECETYPECOUNT][SQUARECOUNT]{};
     int cont2[PIECETYPECOUNT][SQUARECOUNT][PIECETYPECOUNT][SQUARECOUNT]{};
+    int cont3[PIECETYPECOUNT][SQUARECOUNT][PIECETYPECOUNT][SQUARECOUNT]{};
+    int cont4[PIECETYPECOUNT][SQUARECOUNT][PIECETYPECOUNT][SQUARECOUNT]{};
     int main [COLOURNB][PIECETYPECOUNT][SQUARECOUNT][SQUARECOUNT]{};
     int cap  [PIECETYPECOUNT][SQUARECOUNT][PIECETYPECOUNT]{};
 
@@ -31,6 +32,20 @@ struct History {
         return cont2[prevPT][prevTo][pt][to];
     }
 
+    inline int& cont3Hist(int prevPT, int prevTo, int pt, int to) {
+        return cont3[prevPT][prevTo][pt][to];
+    }
+    inline int  cont3Hist(int prevPT, int prevTo, int pt, int to) const {
+        return cont3[prevPT][prevTo][pt][to];
+    }
+
+    inline int& cont4Hist(int prevPT, int prevTo, int pt, int to) {
+        return cont4[prevPT][prevTo][pt][to];
+    }
+    inline int  cont4Hist(int prevPT, int prevTo, int pt, int to) const {
+        return cont4[prevPT][prevTo][pt][to];
+    }
+
     inline int& capHist(int movedPT, int to, int capturedPT) {
         return cap[movedPT][to][capturedPT];
     }
@@ -53,6 +68,8 @@ struct History {
                 for (int to = 0; to < SQUARECOUNT; ++to) {
                     cont1[ppt][pto][pt][to] = -100;
                     cont2[ppt][pto][pt][to] = -100;
+                    cont3[ppt][pto][pt][to] = -100;
+                    cont4[ppt][pto][pt][to] = -100;
                 }
 
     // Capture history

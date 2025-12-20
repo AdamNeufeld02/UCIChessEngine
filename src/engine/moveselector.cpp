@@ -3,7 +3,7 @@
 
 namespace engine {
 
-MoveSelector::MoveSelector(Move ttm, Board& bd, bool quiets, SearchStack* srchStck, History& hist) :
+MoveSelector::MoveSelector(Move ttm, Board& bd, bool quiets, SearchStack* srchStck, History& hist, Move* killers) :
     ttMove(ttm),
     board(bd),
     allowQuiets(quiets),
@@ -17,6 +17,9 @@ MoveSelector::MoveSelector(Move ttm, Board& bd, bool quiets, SearchStack* srchSt
         } else {
             stage = EvasionsInit;
         }
+
+        killerMoves[0] = killers[0];
+        killerMoves[1] = killers[1];
     }
 
 template<GenType Type>
@@ -46,7 +49,7 @@ void MoveSelector::score() {
            
         } else {
             int mainHist = history.mainHist(board.sideToMove(), pt, from, to);
-            int contHist1, contHist2;
+            int contHist1, contHist2, contHist3, contHist4;
             if (ss->ply >= 1  && (ss-1)->current != NOMOVE) {
                 contHist1 = history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), pt, to);
             } else {
@@ -57,7 +60,17 @@ void MoveSelector::score() {
             } else {
                 contHist2 = -100;
             }
-            p->score = MAIN_HIST_SCALE * mainHist + CONT_HIST_1_SCALE * contHist1 + CONT_HIST_2_SCALE * contHist2;
+            if (ss->ply >= 3  && (ss-3)->current != NOMOVE) {
+                contHist3 = history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), pt, to);
+            } else {
+                contHist3 = -100;
+            }
+            if (ss->ply >= 4  && (ss-4)->current != NOMOVE) {
+                contHist4 = history.cont4Hist((ss-4)->movedPT, toSq((ss-4)->current), pt, to);
+            } else {
+                contHist4 = -100;
+            }
+            p->score = MAIN_HIST_SCALE * mainHist + CONT_HIST_1_SCALE * contHist1 + CONT_HIST_2_SCALE * contHist2 + CONT_HIST_3_SCALE * contHist3 + CONT_HIST_4_SCALE * contHist4;
         }
     }
 }
@@ -90,13 +103,29 @@ Move MoveSelector::selectMove() {
                 std::swap(*badCapEnd++, *(cur-1));
             }
 
-            stage = allowQuiets ? QuietsInit : (badCapEnd != moves) ? BadCaptureinit : Done;
+            stage = allowQuiets ? KillerMove1 : (badCapEnd != moves) ? BadCaptureinit : Done;
             break;
+
+        case KillerMove1:
+            stage = KillerMove2;
+            if (killerMoves[0] != NOMOVE && board.pseudoLegalMove(killerMoves[0])) {               
+                return killerMoves[0];
+            }
+            [[fallthrough]];
+
+        case KillerMove2:
+            stage = QuietsInit;
+            if (killerMoves[1] != NOMOVE && board.pseudoLegalMove(killerMoves[1])) {
+                return killerMoves[1];
+            }
+            [[fallthrough]];
 
         case QuietsInit:
             cur = capEnd;
             endCur = generate<GEN_QUIETS>(board, capEnd);
             if (ttMove) endCur = eraseMove(cur, endCur, ttMove);
+            if (killerMoves[0]) endCur = eraseMove(cur, endCur, killerMoves[0]);
+            if (killerMoves[1]) endCur = eraseMove(cur, endCur, killerMoves[1]);
             score<GEN_QUIETS>();
             stage = Quiets;
             [[fallthrough]];
