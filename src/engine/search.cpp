@@ -2,12 +2,66 @@
 #include "engine/threads.h"
 #include "engine/moveselector.h"
 #include "engine/engine.h"
-
+#include "engine/historystats.h"
 
 static const int CHECKFREQ = 4095;
+constexpr int HIST_CAP = 8192;
+constexpr int ETA_SHIFT = 3;
+
+static inline int clampHist(int x) {
+    if (x >  HIST_CAP) return  HIST_CAP;
+    if (x < -HIST_CAP) return -HIST_CAP;
+    return x;
+}
+
+static inline void updateToward(int& h, int target) {
+    target = clampHist(target);
+    h += (target - h) >> ETA_SHIFT;
+}
+
+static inline int winTarget(int depth) {
+    return std::min(HIST_CAP, depth * depth * 8);
+}
+
+static inline int loseTarget(int depth) {
+    return -winTarget(depth) / 8;
+}
 
 
 namespace engine {
+
+static inline int quietHistoryScore(SearchStack* ss, Worker& w, const Board& b, Move m) {
+    Square from = fromSq(m);
+    Square to   = toSq(m);
+    Piece pc    = b.pieceOn(from);
+    PieceType pt = typeOf(pc);
+    int contHistScore = 0;
+    if (ss->ply >= 1 && (ss-1)->current != NOMOVE) {
+        contHistScore += w.history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), pt, to);
+    }
+    if (ss->ply >= 2 && (ss-2)->current != NOMOVE) {
+        contHistScore += w.history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), pt, to);
+    }
+    if (ss->ply >= 3 && (ss-3)->current != NOMOVE) {
+        contHistScore += w.history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), pt, to);
+    }
+    if (ss->ply >= 4 && (ss-4)->current != NOMOVE) {
+        contHistScore += w.history.cont4Hist((ss-4)->movedPT, toSq((ss-4)->current), pt, to);
+    }
+    return (int)w.history.mainHist(b.sideToMove(), pt, from, to) + contHistScore;
+}
+
+static inline int captureHistoryScore(Worker& w, const Board& b, Move m) {
+    Square from = fromSq(m);
+    Square to   = toSq(m);
+
+    Piece attacker = b.pieceOn(from);
+    Piece victim   = b.pieceOn(to);
+    PieceType at = typeOf(attacker);
+    PieceType vt = typeOf(victim);
+
+    return (int)w.history.capHist(at, to, vt);
+}
 
 Worker::Worker(SharedState& st, size_t idx)
     : threads(st.threads)
@@ -33,6 +87,13 @@ void Worker::startSearching() {
         threads.waitForOthers(threadID);
         Move best = threads.voteBestMove();
         threads.fireBestMove(best, bestScore, bestDepth, bestPv);
+        HistoryDistLogger::instance().flushJsonlAppend(
+            "history_score_distributions.jsonl",
+            "dev",
+            threads.numThreads(),
+            nodesSearched,
+            bestDepth
+        );
     }
 }
 
@@ -245,8 +306,9 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
     if (!pvNode && ((ss-1)->current != NOMOVE) && staticEval >= beta && !board.checkers() && board.nonPawnMaterial(board.sideToMove()) && depth >= 3){
         ss->current = NOMOVE;
+        int R = 2 + depth/4;
         board.makeNullMove(&st);
-        Value nullValue = -search(ss+1, board, -beta, -beta+1, depth-3, false);
+        Value nullValue = -search(ss+1, board, -beta, -beta+1, depth-R, false);
         board.undoNullMove();
         if (threads.stop) return 0;
         if (nullValue >= beta) {
@@ -282,7 +344,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
                 continue;
             }
         }
-
+        int historyScore = isQuiet ? quietHistoryScore(ss, *this, board, move) : captureHistoryScore(*this, board, move);
         ss->current = move;
         ss->movedPT = typeOf(board.pieceOn(fromSq(move)));
         bool doLMR = !board.checkers() && depth > 2 && movesSearched > 3 && !givesCheck && isQuiet; 
@@ -325,6 +387,11 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
                 killerMoves[ss->ply][1] = killerMoves[ss->ply][0];
                 killerMoves[ss->ply][0] = move;
             }
+            if (isQuiet) {
+                HistoryDistLogger::instance().logQuiet(HistOutcome::FailHigh, historyScore, depth);
+            } else {
+                HistoryDistLogger::instance().logCapture(HistOutcome::FailHigh, historyScore, depth);
+            }
             return currValue;
         }
 
@@ -334,6 +401,17 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
             if (topScore > alpha) {
                 alpha = topScore;
                 updatePV(ss->pv, move, (ss+1)->pv);
+                if (isQuiet) {
+                    HistoryDistLogger::instance().logQuiet(HistOutcome::ImproveAlpha, historyScore, depth);
+                } else {
+                    HistoryDistLogger::instance().logCapture(HistOutcome::ImproveAlpha, historyScore, depth);
+                }
+            } else {
+                if (isQuiet) {
+                    HistoryDistLogger::instance().logQuiet(HistOutcome::FailLow, historyScore, depth);
+                } else {
+                    HistoryDistLogger::instance().logCapture(HistOutcome::FailLow, historyScore, depth);
+                }
             }
         }
         movesSearched++;
@@ -497,49 +575,49 @@ inline Value Worker::futilityMargin(int depth) {
 }
 
 void Worker::updateHistories(Board& board, SearchStack* ss, SearchedMoves<SEARCHEDLISTCAP>& searchedCaptures, SearchedMoves<SEARCHEDLISTCAP>& searchedQuiets, Move bestMove, int depth) {
-    int bonus = depth * depth;
-    int malus = bonus / 4;
+    int wt = winTarget(depth);
+    int lt = loseTarget(depth);
 
     if (!board.captureGenType(bestMove)) {
-        updateMainHistory(board, bestMove, bonus);
-        updateContHistory(board, ss, bestMove, bonus);
+        updateMainHistory(board, bestMove, wt);
+        updateContHistory(board, ss, bestMove, wt);
 
         for (Move m : searchedQuiets) {
-            updateMainHistory(board, m, -malus);
-            updateContHistory(board, ss, m, -malus);
+            updateMainHistory(board, m, lt);
+            updateContHistory(board, ss, m, lt);
         }
     } else {
-        updateCaptureHistory(board, bestMove, bonus);
+        updateCaptureHistory(board, bestMove, wt);
     }
 
     for (Move m : searchedCaptures) {
-        updateCaptureHistory(board, m, -malus);
+        updateCaptureHistory(board, m, lt);
     }
 }
 
 void Worker::updateMainHistory(Board& board, Move move, int reward) {
-    history.mainHist(board.sideToMove(), typeOf(board.pieceOn(fromSq(move))), fromSq(move), toSq(move)) += reward;
+    updateToward(history.mainHist(board.sideToMove(), typeOf(board.pieceOn(fromSq(move))), fromSq(move), toSq(move)), reward);
 }
 
 void Worker::updateCaptureHistory(Board& board, Move move, int reward) {
-    history.capHist(typeOf(board.pieceOn(fromSq(move))), toSq(move), typeOf(board.pieceOn(toSq(move)))) += reward;
+    updateToward(history.capHist(typeOf(board.pieceOn(fromSq(move))), toSq(move), typeOf(board.pieceOn(toSq(move)))), reward);
 }
 
 void Worker::updateContHistory(Board& board, SearchStack* ss, Move move, int reward) {
     if (ss->ply >= 1 && (ss-1)->current != NOMOVE) {
-        history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward;
+        updateToward(history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), reward);
     }
 
     if (ss->ply >= 2 && (ss-2)->current != NOMOVE) {
-        history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward; 
+        updateToward(history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), reward); 
     }
 
     if (ss->ply >= 3 && (ss-3)->current != NOMOVE) {
-        history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward; 
+        updateToward(history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), reward); 
     }
 
     if (ss->ply >= 4 && (ss-4)->current != NOMOVE) {
-        history.cont3Hist((ss-4)->movedPT, toSq((ss-4)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)) += reward; 
+        updateToward(history.cont3Hist((ss-4)->movedPT, toSq((ss-4)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), reward); 
     }
 }
 

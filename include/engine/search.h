@@ -65,7 +65,7 @@ public:
     Value search(SearchStack* ss, Board& board, Value alpha, Value beta, int depth, bool pvNode);
     Value qsearch(SearchStack* ss, Board& board, Value alpha, Value beta);
 
-
+    History history;
 private:
 
     void updatePV(Move* pv, Move move, Move* childPv);
@@ -87,7 +87,7 @@ private:
 
     ThreadPool& threads;
     TranspositionTable& tt;
-    History history;
+    
     Move killerMoves[MAXPLY][2];
     
 
