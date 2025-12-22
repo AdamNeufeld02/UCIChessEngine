@@ -42,13 +42,7 @@ static inline int quietHistoryScore(SearchStack* ss, Worker& w, const Board& b, 
     if (ss->ply >= 2 && (ss-2)->current != NOMOVE) {
         contHistScore += w.history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), pt, to);
     }
-    if (ss->ply >= 3 && (ss-3)->current != NOMOVE) {
-        contHistScore += w.history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), pt, to);
-    }
-    if (ss->ply >= 4 && (ss-4)->current != NOMOVE) {
-        contHistScore += w.history.cont4Hist((ss-4)->movedPT, toSq((ss-4)->current), pt, to);
-    }
-    return (int)w.history.mainHist(b.sideToMove(), pt, from, to) + contHistScore;
+    return 2 * (int)w.history.mainHist(b.sideToMove(), pt, from, to) + contHistScore;
 }
 
 static inline int captureHistoryScore(Worker& w, const Board& b, Move m) {
@@ -371,14 +365,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
         if (threads.stop) return 0;
 
-        if (movesSearched < SEARCHEDLISTCAP) {
-            if (!isQuiet) {
-                searchedCaptures.pushBack(move);
-            } else {
-                searchedQuiets.pushBack(move);
-            }
-        }
-
         // fail high
         if (currValue >= beta) {
             ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
@@ -412,6 +398,12 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
                 } else {
                     HistoryDistLogger::instance().logCapture(HistOutcome::FailLow, historyScore, depth);
                 }
+            }
+        } else if (movesSearched < SEARCHEDLISTCAP) {
+            if (!isQuiet) {
+                searchedCaptures.pushBack(move);
+            } else {
+                searchedQuiets.pushBack(move);
             }
         }
         movesSearched++;
@@ -595,29 +587,29 @@ void Worker::updateHistories(Board& board, SearchStack* ss, SearchedMoves<SEARCH
     }
 }
 
-void Worker::updateMainHistory(Board& board, Move move, int reward) {
-    updateToward(history.mainHist(board.sideToMove(), typeOf(board.pieceOn(fromSq(move))), fromSq(move), toSq(move)), reward);
+void Worker::updateMainHistory(Board& board, Move move, int target) {
+    updateToward(history.mainHist(board.sideToMove(), typeOf(board.pieceOn(fromSq(move))), fromSq(move), toSq(move)), target);
 }
 
-void Worker::updateCaptureHistory(Board& board, Move move, int reward) {
-    updateToward(history.capHist(typeOf(board.pieceOn(fromSq(move))), toSq(move), typeOf(board.pieceOn(toSq(move)))), reward);
+void Worker::updateCaptureHistory(Board& board, Move move, int target) {
+    updateToward(history.capHist(typeOf(board.pieceOn(fromSq(move))), toSq(move), typeOf(board.pieceOn(toSq(move)))), target);
 }
 
-void Worker::updateContHistory(Board& board, SearchStack* ss, Move move, int reward) {
+void Worker::updateContHistory(Board& board, SearchStack* ss, Move move, int target) {
     if (ss->ply >= 1 && (ss-1)->current != NOMOVE) {
-        updateToward(history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), reward);
+        updateToward(history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), target);
     }
 
     if (ss->ply >= 2 && (ss-2)->current != NOMOVE) {
-        updateToward(history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), reward); 
+        updateToward(history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), target); 
     }
 
     if (ss->ply >= 3 && (ss-3)->current != NOMOVE) {
-        updateToward(history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), reward); 
+        updateToward(history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), target); 
     }
 
     if (ss->ply >= 4 && (ss-4)->current != NOMOVE) {
-        updateToward(history.cont3Hist((ss-4)->movedPT, toSq((ss-4)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), reward); 
+        updateToward(history.cont3Hist((ss-4)->movedPT, toSq((ss-4)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), target); 
     }
 }
 

@@ -123,6 +123,7 @@ void ThreadPool::waitForOthers(size_t idx) {
 }
 
 void ThreadPool::clearThreads() {
+    waitForAllThreads();
     for (auto& t : threads) {
         t->clearWorker();
     }

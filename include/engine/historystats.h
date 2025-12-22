@@ -41,18 +41,23 @@ struct FixedHistogram {
         for (int i = 0; i < NBINS; i++) bins[(size_t)i] += o.bins[(size_t)i];
         total += o.total;
     }
+
+    void clear() {
+        bins.fill(0);
+        total = 0;
+    }
 };
 
 struct HistoryDistSnapshot {
     // Quiet (main) history distributions
-    FixedHistogram<8192, 16> quiet_failHigh;
-    FixedHistogram<8192, 16> quiet_improveAlpha;
-    FixedHistogram<8192, 16> quiet_failLow;
+    FixedHistogram<32768, 16> quiet_failHigh;
+    FixedHistogram<32768, 16> quiet_improveAlpha;
+    FixedHistogram<32768, 16> quiet_failLow;
 
     // Capture history distributions
-    FixedHistogram<8192, 16> capt_failHigh;
-    FixedHistogram<8192, 16> capt_improveAlpha;
-    FixedHistogram<8192, 16> capt_failLow;
+    FixedHistogram<32768, 16> capt_failHigh;
+    FixedHistogram<32768, 16> capt_improveAlpha;
+    FixedHistogram<32768, 16> capt_failLow;
 
     void mergeFrom(const HistoryDistSnapshot& o) {
         quiet_failHigh.mergeFrom(o.quiet_failHigh);
@@ -67,6 +72,16 @@ struct HistoryDistSnapshot {
     bool empty() const {
         return quiet_failHigh.total == 0 && quiet_improveAlpha.total == 0 && quiet_failLow.total == 0 &&
                capt_failHigh.total  == 0 && capt_improveAlpha.total  == 0 && capt_failLow.total  == 0;
+    }
+
+    void clear() {
+        quiet_failHigh.clear();
+        quiet_improveAlpha.clear();
+        quiet_failLow.clear();
+
+        capt_failHigh.clear();
+        capt_improveAlpha.clear();
+        capt_failLow.clear();
     }
 };
 
@@ -105,19 +120,27 @@ public:
         }
     }
 
-    // One JSON line per flush call
     void flushJsonlAppend(const std::string& path,
                           const std::string& engineTag = "",
                           int threads = -1,
                           uint64_t nodes = 0,
                           int completedDepth = -1) {
         std::lock_guard<std::mutex> lk(mu_);
+
+        // Fast exit: nothing to flush
+        bool any = false;
+        for (int d = 0; d <= MAX_LOG_DEPTH; d++) {
+            if (!byDepth_[(size_t)d].empty()) { any = true; break; }
+        }
+        if (!any) return;
+
         std::ofstream out(path, std::ios::app);
-        if (!out) return;
+        if (!out) return; // do NOT clear if we couldn't open the file
 
         auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         std::string runId = makeRunId_();
 
+        // --- Write JSON line ---
         out << "{";
         out << "\"ts_utc\":\"" << isoUtc_(t) << "\",";
         out << "\"run_id\":\"" << runId << "\",";
@@ -126,8 +149,6 @@ public:
         out << "\"nodes\":" << nodes << ",";
         out << "\"completed_depth\":" << completedDepth << ",";
 
-        // "by_depth" is a JSON object whose keys are depth buckets (as strings).
-        // We only emit buckets that have at least one sample.
         out << "\"by_depth\":{";
         bool firstDepth = true;
         for (int d = 0; d <= MAX_LOG_DEPTH; d++) {
@@ -146,8 +167,18 @@ public:
             out << "}";
         }
         out << "}";
-
         out << "}\n";
+
+        // Ensure stream is OK before clearing (avoid losing data on I/O failure)
+        out.flush();
+        if (!out.good()) return;
+
+        // ✅ Critical fix: clear state after successful flush so future flushes
+        // only include new samples.
+        clearAll_();
+    }
+    void clearAll_() {
+        for (auto& s : byDepth_) s.clear();
     }
 
 private:

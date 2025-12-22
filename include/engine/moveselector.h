@@ -22,13 +22,13 @@ enum Stage : uint8_t{
     Done
 };
 
-static const int MVV_SCALE = 16;
+static const int MVV_SCALE = 3;
 static const int CAPT_HIST_SCALE = 5;
-static const int MAIN_HIST_SCALE = 5;
-static const int CONT_HIST_1_SCALE = 12;
-static const int CONT_HIST_2_SCALE = 10;
-static const int CONT_HIST_3_SCALE = 8;
-static const int CONT_HIST_4_SCALE = 6;
+static const int MAIN_HIST_SCALE = 8;
+static const int CONT_HIST_1_SCALE = 4;
+static const int CONT_HIST_2_SCALE = 4;
+static const int CONT_HIST_3_SCALE = 2;
+static const int CONT_HIST_4_SCALE = 1;
 
 
 class MoveSelector {
