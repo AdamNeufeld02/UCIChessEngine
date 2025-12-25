@@ -19,6 +19,7 @@ struct State{
     Square epSquare;
     int halfmoveClock;
     int fullmoveNumber;
+    int ply;
     int movesFromNull;
 
     Piece captured;
@@ -93,6 +94,7 @@ public:
     bool canCastle(CastlingRight cr) const;
     bool castlingBlocked(CastlingRight cr) const;
     ZobristKey key() const;
+    int ply() const;
 };
 
 inline Piece Board::pieceOn(Square sq) const {
@@ -177,6 +179,10 @@ inline bool Board::captureGenType(Move move) const {
 
 inline bool Board::nonPawnMaterial(Colour col) const {
     return pieces(col, KNIGHT) | pieces(col, BISHOP) | pieces(col, ROOK) | pieces(col, QUEEN);
+}
+
+inline int Board::ply() const {
+    return st->ply;
 }
 
 inline void Board::putPiece(Piece pc, Square sq) {

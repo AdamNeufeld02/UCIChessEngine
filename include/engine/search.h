@@ -80,7 +80,7 @@ private:
     void updateMainHistory(Board& board, Move move, int reward);
     void updateCaptureHistory(Board& board, Move move, int reward);
 
-    int calcReduction(int depth, int moveCount, bool pvNode);
+    int baseReduction(int depth, int moveCount);
     Value rfpMargin(int depth);
     Value razorMargin(int depth);
     Value futilityMargin(int depth);
@@ -89,6 +89,7 @@ private:
     TranspositionTable& tt;
     
     Move killerMoves[MAXPLY][2];
+    int reductions[MAXMOVES];
     
 
     Board rootBoard;

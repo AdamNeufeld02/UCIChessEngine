@@ -37,12 +37,18 @@ static inline int quietHistoryScore(SearchStack* ss, Worker& w, const Board& b, 
     PieceType pt = typeOf(pc);
     int contHistScore = 0;
     if (ss->ply >= 1 && (ss-1)->current != NOMOVE) {
-        contHistScore += w.history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), pt, to);
+        contHistScore += CONT_HIST_1_SCALE * w.history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), pt, to);
     }
     if (ss->ply >= 2 && (ss-2)->current != NOMOVE) {
-        contHistScore += w.history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), pt, to);
+        contHistScore += CONT_HIST_2_SCALE * w.history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), pt, to);
     }
-    return 2 * (int)w.history.mainHist(b.sideToMove(), pt, from, to) + contHistScore;
+    if (ss->ply >= 3 && (ss-3)->current != NOMOVE) {
+        contHistScore += CONT_HIST_3_SCALE * w.history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), pt, to);
+    }
+    if (ss->ply >= 4 && (ss-4)->current != NOMOVE) {
+        contHistScore += CONT_HIST_4_SCALE * w.history.cont4Hist((ss-4)->movedPT, toSq((ss-4)->current), pt, to);
+    }
+    return MAIN_HIST_SCALE * w.history.mainHist(b.sideToMove(), pt, from, to) + contHistScore;
 }
 
 static inline int captureHistoryScore(Worker& w, const Board& b, Move m) {
@@ -54,7 +60,7 @@ static inline int captureHistoryScore(Worker& w, const Board& b, Move m) {
     PieceType at = typeOf(attacker);
     PieceType vt = typeOf(victim);
 
-    return (int)w.history.capHist(at, to, vt);
+    return w.history.capHist(at, to, vt);
 }
 
 Worker::Worker(SharedState& st, size_t idx)
@@ -97,6 +103,9 @@ void Worker::clear() {
     for (int i = 0; i < MAXPLY; i++) {
         killerMoves[i][0] = NOMOVE;
         killerMoves[i][1] = NOMOVE;
+    }
+    for (int i = 0; i < MAXMOVES; i++) {
+        reductions[i] = std::log(i);
     }
 }
 
@@ -205,7 +214,7 @@ Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta,
     Value topScore = -VALUEINFINITE;
     int movesSearched = 0;
 
-    MoveSelector ms = MoveSelector(bestPv[0], board, true, ss, history, killerMoves[ss->ply]);
+    MoveSelector ms = MoveSelector(bestPv[0], board, true, ss, history, killerMoves[board.ply()]);
     
     while ((move = ms.selectMove()) != NOMOVE) {
         if (!board.legalMove(move)) continue;
@@ -319,7 +328,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     Value currValue = 0;
     (ss+1)->pv = pv;
     int movesSearched = 0;
-    MoveSelector ms = MoveSelector(ttmove, board, true, ss, history, killerMoves[ss->ply]);
+    MoveSelector ms = MoveSelector(ttmove, board, true, ss, history, killerMoves[board.ply()]);
     SearchedMoves<SEARCHEDLISTCAP> searchedQuiets;
     SearchedMoves<SEARCHEDLISTCAP> searchedCaptures;
     Move move;
@@ -339,16 +348,24 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
             }
         }
         int historyScore = isQuiet ? quietHistoryScore(ss, *this, board, move) : captureHistoryScore(*this, board, move);
+
         ss->current = move;
         ss->movedPT = typeOf(board.pieceOn(fromSq(move)));
-        bool doLMR = !board.checkers() && depth > 2 && movesSearched > 3 && !givesCheck && isQuiet; 
         board.makeMove(move, &st); 
         if (movesSearched == 0) {
             (ss+1)->pv[0] = NOMOVE;
             currValue= -search(ss+1, board, -beta, -alpha, depth-1, pvNode);
         } else {
             (ss+1)->pv[0] = NOMOVE;
-            int r = doLMR ? calcReduction(depth, movesSearched, pvNode) : 0;
+            int r = baseReduction(depth, movesSearched);
+            if (isQuiet) {
+                r -= (historyScore - 2000)/ 1000;
+            } else {
+                r -= (historyScore - 100) / 50;
+            }
+            r -= pvNode;
+            r -= givesCheck;
+            if (depth <= 2 || r < 0) r = 0;
             currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1-r, false);
 
             if (!pvNode && currValue > alpha && r != 0) {
@@ -369,9 +386,9 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         if (currValue >= beta) {
             ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
             updateHistories(board, ss, searchedCaptures, searchedQuiets, move, depth + QSEARCHHISTORYDEPTH);
-            if (isQuiet && killerMoves[ss->ply][0] != move) {
-                killerMoves[ss->ply][1] = killerMoves[ss->ply][0];
-                killerMoves[ss->ply][0] = move;
+            if (isQuiet && killerMoves[board.ply()][0] != move) {
+                killerMoves[board.ply()][1] = killerMoves[board.ply()][0];
+                killerMoves[board.ply()][0] = move;
             }
             if (isQuiet) {
                 HistoryDistLogger::instance().logQuiet(HistOutcome::FailHigh, historyScore, depth);
@@ -473,7 +490,7 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
 
     Value currValue = 0;
     int movesSearched = 0;
-    MoveSelector ms = MoveSelector(ttmove, board, false, ss, history, killerMoves[ss->ply]);
+    MoveSelector ms = MoveSelector(ttmove, board, false, ss, history, killerMoves[board.ply()]);
     SearchedMoves<SEARCHEDLISTCAP> searchedQuiets;
     SearchedMoves<SEARCHEDLISTCAP> searchedCaptures;
     State st;
@@ -542,16 +559,8 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     return topScore;
 }
 
-int Worker::calcReduction(int depth, int moveCount, bool pvNode) {
-    if (depth < 3 || moveCount < 4) return 0;
-    int r = 1;
-    if (depth >= 8) r++;
-    if (depth >= 12) r++;
-    if (moveCount >= 8) r++;
-    if (moveCount >= 16) r++;
-    if (pvNode) r--;
-    if (r < 0) r = 0;
-    return r;
+int Worker::baseReduction(int depth, int moveCount) {
+    return reductions[depth] * reductions[moveCount] / 2;
 }
 
 inline Value Worker::rfpMargin(int depth) {

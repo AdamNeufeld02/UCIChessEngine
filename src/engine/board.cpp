@@ -45,6 +45,7 @@ void Board::initRootState(State* rootState) {
     rootState->checkSquares[KING] = 0ULL;
     rootState->epSquare = NOSQUARE;
     rootState->halfmoveClock = 0;
+    rootState->ply = 0;
     rootState->fullmoveNumber = 1;
     rootState->movesFromNull = 0;
     rootState->repetitionCount = 0;
@@ -132,6 +133,7 @@ void Board::fenToBoard(std::string fenString, State* rootState) {
     iss >> halfmoveStr;
     iss >> fullmoveStr;
     rootState->halfmoveClock = std::stoi(halfmoveStr);
+    rootState->ply = rootState->halfmoveClock;
     rootState->fullmoveNumber = std::stoi(fullmoveStr);
 
     rootState->previous = nullptr;
@@ -157,6 +159,7 @@ void Board::makeMove(Move move, State* newState) {
     newState->captured = capt;
     newState->halfmoveClock += 1;
     newState->movesFromNull += 1;
+    newState->ply += 1;
     if (us == BLACK) {
         newState->fullmoveNumber += 1;
     }
@@ -278,6 +281,7 @@ void Board::makeNullMove(State* newState) {
     newState->previous = st;
     newState->movesFromNull = 0;
     newState->repetitionCount = 0;
+    newState->ply += 1;
     st = newState;
     updateChecksAndPins(colToMove);
 }
