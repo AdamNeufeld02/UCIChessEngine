@@ -59,24 +59,24 @@ struct History {
         for (int pt = 0; pt < PIECETYPECOUNT; ++pt)
             for (int from = 0; from < SQUARECOUNT; ++from)
                 for (int to = 0; to < SQUARECOUNT; ++to)
-                    main[c][pt][from][to] = -50;
+                    main[c][pt][from][to] = 0;
 
     // Continuation histories
     for (int ppt = 0; ppt < PIECETYPECOUNT; ++ppt)
         for (int pto = 0; pto < SQUARECOUNT; ++pto)
             for (int pt = 0; pt < PIECETYPECOUNT; ++pt)
                 for (int to = 0; to < SQUARECOUNT; ++to) {
-                    cont1[ppt][pto][pt][to] = -100;
-                    cont2[ppt][pto][pt][to] = -100;
-                    cont3[ppt][pto][pt][to] = -100;
-                    cont4[ppt][pto][pt][to] = -100;
+                    cont1[ppt][pto][pt][to] = 0;
+                    cont2[ppt][pto][pt][to] = 0;
+                    cont3[ppt][pto][pt][to] = 0;
+                    cont4[ppt][pto][pt][to] = 0;
                 }
 
     // Capture history
     for (int pt = 0; pt < PIECETYPECOUNT; ++pt)
         for (int to = 0; to < SQUARECOUNT; ++to)
             for (int cpt = 0; cpt < PIECETYPECOUNT; ++cpt)
-                cap[pt][to][cpt] = -200;
+                cap[pt][to][cpt] = 0;
     }
 };
 

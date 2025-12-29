@@ -53,22 +53,22 @@ void MoveSelector::score() {
             if (ss->ply >= 1  && (ss-1)->current != NOMOVE) {
                 contHist1 = history.cont1Hist((ss-1)->movedPT, toSq((ss-1)->current), pt, to);
             } else {
-                contHist1 = -100;
+                contHist1 = 0;
             }
             if (ss->ply >= 2  && (ss-2)->current != NOMOVE) {
                 contHist2 = history.cont2Hist((ss-2)->movedPT, toSq((ss-2)->current), pt, to);
             } else {
-                contHist2 = -100;
+                contHist2 = 0;
             }
             if (ss->ply >= 3  && (ss-3)->current != NOMOVE) {
                 contHist3 = history.cont3Hist((ss-3)->movedPT, toSq((ss-3)->current), pt, to);
             } else {
-                contHist3 = -100;
+                contHist3 = 0;
             }
             if (ss->ply >= 4  && (ss-4)->current != NOMOVE) {
                 contHist4 = history.cont4Hist((ss-4)->movedPT, toSq((ss-4)->current), pt, to);
             } else {
-                contHist4 = -100;
+                contHist4 = 0;
             }
             p->score = MAIN_HIST_SCALE * mainHist + CONT_HIST_1_SCALE * contHist1 + CONT_HIST_2_SCALE * contHist2 + CONT_HIST_3_SCALE * contHist3 + CONT_HIST_4_SCALE * contHist4;
         }

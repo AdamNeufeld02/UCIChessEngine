@@ -2,7 +2,7 @@
 #include "engine/threads.h"
 #include "engine/moveselector.h"
 #include "engine/engine.h"
-#include "engine/historystats.h"
+#include "cmath"
 
 static const int CHECKFREQ = 4095;
 constexpr int HIST_CAP = 8192;
@@ -87,13 +87,6 @@ void Worker::startSearching() {
         threads.waitForOthers(threadID);
         Move best = threads.voteBestMove();
         threads.fireBestMove(best, bestScore, bestDepth, bestPv);
-        HistoryDistLogger::instance().flushJsonlAppend(
-            "history_score_distributions.jsonl",
-            "dev",
-            threads.numThreads(),
-            nodesSearched,
-            bestDepth
-        );
     }
 }
 
@@ -348,7 +341,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
             }
         }
         int historyScore = isQuiet ? quietHistoryScore(ss, *this, board, move) : captureHistoryScore(*this, board, move);
-
         ss->current = move;
         ss->movedPT = typeOf(board.pieceOn(fromSq(move)));
         board.makeMove(move, &st); 
@@ -390,11 +382,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
                 killerMoves[board.ply()][1] = killerMoves[board.ply()][0];
                 killerMoves[board.ply()][0] = move;
             }
-            if (isQuiet) {
-                HistoryDistLogger::instance().logQuiet(HistOutcome::FailHigh, historyScore, depth);
-            } else {
-                HistoryDistLogger::instance().logCapture(HistOutcome::FailHigh, historyScore, depth);
-            }
             return currValue;
         }
 
@@ -404,17 +391,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
             if (topScore > alpha) {
                 alpha = topScore;
                 updatePV(ss->pv, move, (ss+1)->pv);
-                if (isQuiet) {
-                    HistoryDistLogger::instance().logQuiet(HistOutcome::ImproveAlpha, historyScore, depth);
-                } else {
-                    HistoryDistLogger::instance().logCapture(HistOutcome::ImproveAlpha, historyScore, depth);
-                }
-            } else {
-                if (isQuiet) {
-                    HistoryDistLogger::instance().logQuiet(HistOutcome::FailLow, historyScore, depth);
-                } else {
-                    HistoryDistLogger::instance().logCapture(HistOutcome::FailLow, historyScore, depth);
-                }
             }
         } else if (movesSearched < SEARCHEDLISTCAP) {
             if (!isQuiet) {
@@ -618,7 +594,7 @@ void Worker::updateContHistory(Board& board, SearchStack* ss, Move move, int tar
     }
 
     if (ss->ply >= 4 && (ss-4)->current != NOMOVE) {
-        updateToward(history.cont3Hist((ss-4)->movedPT, toSq((ss-4)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), target); 
+        updateToward(history.cont4Hist((ss-4)->movedPT, toSq((ss-4)->current), typeOf(board.pieceOn(fromSq(move))), toSq(move)), target); 
     }
 }
 

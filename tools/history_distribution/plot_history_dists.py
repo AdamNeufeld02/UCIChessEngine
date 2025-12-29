@@ -338,14 +338,20 @@ def plot_threshold_curves(
     smooth: int,
 ):
     """
-    Plots several curves as a function of threshold T (x-axis = history score):
-      - kept_total_frac(T)   = P(score >= T)
-      - kept_failhigh_frac(T)= P(FH & score>=T)/P(FH)
-      - kept_faillow_frac(T) = P(FL & score>=T)/P(FL)
-      - risk_kept(T)         = P(FH | score>=T)
-      - fl_kept(T)           = P(FL | score>=T)
+    Plots curves vs threshold T (x-axis = history score), where we prune below T:
 
-    min_bin applies to the "kept set size": if total_kept(T) < min_bin => mask risk curves.
+      Coverage curves (fraction of each class kept):
+        - kept_total_frac(T)   = P(score >= T)
+        - kept_fh_frac(T)      = P(FH & score>=T) / P(FH)
+        - kept_ia_frac(T)      = P(IA & score>=T) / P(IA)
+        - kept_fl_frac(T)      = P(FL & score>=T) / P(FL)
+
+      Composition curves (probabilities within the kept set):
+        - risk_kept(T)         = P(FH | score>=T)
+        - ia_kept(T)           = P(IA | score>=T)
+        - fl_kept(T)           = P(FL | score>=T)
+
+    min_bin applies to the kept-set size: if total_kept(T) < min_bin => mask composition curves.
     """
     fh = agg[f"{prefix}_fail_high"]
     ia = agg[f"{prefix}_improve_alpha"]
@@ -359,42 +365,56 @@ def plot_threshold_curves(
     # Suffix sums give us "kept if threshold is at bin i"
     suf_total = suffix_sums(total)
     suf_fh = suffix_sums(fh)
+    suf_ia = suffix_sums(ia)
     suf_fl = suffix_sums(fl)
 
     total_all = sum(total)
     fh_all = sum(fh)
+    ia_all = sum(ia)
     fl_all = sum(fl)
 
+    # Coverage / kept fractions
     kept_total_frac = [(suf_total[i] / total_all) if total_all else float("nan") for i in range(len(x))]
     kept_fh_frac = [(suf_fh[i] / fh_all) if fh_all else float("nan") for i in range(len(x))]
+    kept_ia_frac = [(suf_ia[i] / ia_all) if ia_all else float("nan") for i in range(len(x))]
     kept_fl_frac = [(suf_fl[i] / fl_all) if fl_all else float("nan") for i in range(len(x))]
 
-    # Risk/boredom among kept set
+    # Composition within kept set
     risk_kept = []
+    ia_kept = []
     fl_kept = []
     for i in range(len(x)):
         denom = suf_total[i]
         if denom and denom >= min_bin:
-            risk_kept.append(suf_fh[i] / denom)
-            fl_kept.append(suf_fl[i] / denom)
+            risk_kept.append(suf_fh[i] / denom)  # P(FH | kept)
+            ia_kept.append(suf_ia[i] / denom)    # P(IA | kept)
+            fl_kept.append(suf_fl[i] / denom)    # P(FL | kept)
         else:
             risk_kept.append(float("nan"))
+            ia_kept.append(float("nan"))
             fl_kept.append(float("nan"))
 
     # Optional smoothing (helps if bins are small)
     if smooth and smooth > 1:
         kept_total_frac = moving_average(kept_total_frac, smooth)
         kept_fh_frac = moving_average(kept_fh_frac, smooth)
+        kept_ia_frac = moving_average(kept_ia_frac, smooth)
         kept_fl_frac = moving_average(kept_fl_frac, smooth)
         risk_kept = moving_average(risk_kept, smooth)
+        ia_kept = moving_average(ia_kept, smooth)
         fl_kept = moving_average(fl_kept, smooth)
 
     plt.figure(figsize=(12, 6))
+    # Coverage curves
     plt.plot(x, kept_total_frac, label="Kept total fraction P(score>=T)")
     plt.plot(x, kept_fh_frac, label="Kept FailHigh fraction of all FH")
+    plt.plot(x, kept_ia_frac, label="Kept ImproveAlpha fraction of all IA")
     plt.plot(x, kept_fl_frac, label="Kept FailLow fraction of all FL")
-    plt.plot(x, risk_kept, label="Risk among kept: P(FH | score>=T)")
-    plt.plot(x, fl_kept, label="FailLow among kept: P(FL | score>=T)")
+
+    # Composition curves
+    plt.plot(x, risk_kept, label="Among kept: P(FH | score>=T)")
+    plt.plot(x, ia_kept, label="Among kept: P(IA | score>=T)")
+    plt.plot(x, fl_kept, label="Among kept: P(FL | score>=T)")
 
     plt.title(title)
     plt.xlabel("Threshold T (history score) — prune below T")
