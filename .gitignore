@@ -1,1 +1,12 @@
 /build
+
+# Testing workflow: downloaded tools/books and generated artifacts.
+# The scripts that manage these are still tracked.
+/testing/fastchess/*
+/testing/books/*
+/testing/engines/
+/testing/build/
+/testing/.worktree/
+/testing/results/*
+!/testing/results/.gitkeep
+/testing/config.json
