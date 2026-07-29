@@ -26,7 +26,7 @@ UCIEngine::UCIEngine() {
             printInfo(info);
         });
 
-    engine.setThreads(16);
+    engine.setThreads(1);
     engine.setTranspositionTable(64);
 }
 
@@ -75,6 +75,7 @@ void UCIEngine::cmdUci() {
     std::cout << "id author Adam\n";
 
     std::cout << "option name Hash type spin default 64 min 1 max 1024\n";
+    std::cout << "option name Threads type spin default 1 min 1 max 256\n";
 
     std::cout << "uciok\n";
     std::cout.flush();
@@ -204,8 +205,18 @@ void UCIEngine::cmdSetOption(std::istringstream& iss) {
         }
     }
 
-    // (optional) if you support Threads:
-    // else if (name == "Threads") { ... engine.setThreads(n); }
+    else if (name == "Threads") {
+        if (value.empty()) return;
+        try {
+            long long n = std::stoll(value);
+            if (n < 1) n = 1;
+            if (n > 256) n = 256;
+
+            engine.setThreads(static_cast<size_t>(n));
+        } catch (...) {
+            // ignore invalid values
+        }
+    }
 }
 
 void UCIEngine::printInfo(const SearchInfo& info) {

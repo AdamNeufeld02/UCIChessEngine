@@ -231,6 +231,7 @@ Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta,
         if (threads.stop) return 0;
 
         if (currValue >= beta) {
+            updatePV(ss->pv, move, (ss+1)->pv);
             return currValue;
         }
 
@@ -300,10 +301,16 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
     State st;
 
+    Move pv[MAXPLY];
+    Value topScore = -VALUEINFINITE;
+    Value currValue = 0;
+    (ss+1)->pv = pv;
+
     if (!pvNode && ((ss-1)->current != NOMOVE) && staticEval >= beta && !board.checkers() && board.nonPawnMaterial(board.sideToMove()) && depth >= 3){
         ss->current = NOMOVE;
         int R = 2 + depth/4;
         board.makeNullMove(&st);
+        (ss+1)->pv[0] = NOMOVE;
         Value nullValue = -search(ss+1, board, -beta, -beta+1, depth-R, false);
         board.undoNullMove();
         if (threads.stop) return 0;
@@ -316,10 +323,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         }
     }
 
-    Move pv[MAXPLY];
-    Value topScore = -VALUEINFINITE;
-    Value currValue = 0;
-    (ss+1)->pv = pv;
     int movesSearched = 0;
     MoveSelector ms = MoveSelector(ttmove, board, true, ss, history, killerMoves[board.ply()]);
     SearchedMoves<SEARCHEDLISTCAP> searchedQuiets;
@@ -382,6 +385,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
                 killerMoves[board.ply()][1] = killerMoves[board.ply()][0];
                 killerMoves[board.ply()][0] = move;
             }
+            updatePV(ss->pv, move, (ss+1)->pv);
             return currValue;
         }
 
