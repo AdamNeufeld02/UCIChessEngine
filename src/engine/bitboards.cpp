@@ -3,6 +3,15 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <filesystem>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <climits>
+#endif
 
 namespace engine {
 
@@ -228,6 +237,38 @@ Bitboard indexToOccupancy(int index, Bitboard mask) {
     return occ;
 }
 
+static std::filesystem::path executableDir() {
+#ifdef _WIN32
+    wchar_t buf[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+    return std::filesystem::path(std::wstring(buf, len)).parent_path();
+#else
+    char buf[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len <= 0) {
+        return std::filesystem::current_path();
+    }
+    return std::filesystem::path(std::string(buf, static_cast<size_t>(len))).parent_path();
+#endif
+}
+
+// Locates the "data" directory by walking up from the executable's own location,
+// since the CWD at launch depends on the build layout / how the GUI spawns the engine.
+static std::filesystem::path findDataDir() {
+    std::filesystem::path dir = executableDir();
+    for (int i = 0; i < 6; ++i) {
+        if (std::filesystem::exists(dir / "data" / "rook_magics.txt")) {
+            return dir / "data";
+        }
+        std::filesystem::path parent = dir.parent_path();
+        if (parent == dir) {
+            break;
+        }
+        dir = parent;
+    }
+    throw std::runtime_error("Could not locate 'data' directory near the executable");
+}
+
 static void loadMagicNumbers(const char* path, Bitboard out[SQUARECOUNT]) {
     std::ifstream in(path);
     if (!in) {
@@ -289,8 +330,9 @@ void initMagicBitboards() {
     Bitboard rookMagicNumbers[SQUARECOUNT];
     Bitboard bishopMagicNumbers[SQUARECOUNT];
 
-    loadMagicNumbers("../data/rook_magics.txt",  rookMagicNumbers);
-    loadMagicNumbers("../data/bishop_magics.txt", bishopMagicNumbers);
+    std::filesystem::path dataDir = findDataDir();
+    loadMagicNumbers((dataDir / "rook_magics.txt").string().c_str(),  rookMagicNumbers);
+    loadMagicNumbers((dataDir / "bishop_magics.txt").string().c_str(), bishopMagicNumbers);
 
     Bitboard rookMasks[SQUARECOUNT];
     Bitboard bishopMasks[SQUARECOUNT];

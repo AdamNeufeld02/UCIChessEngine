@@ -1,12 +1,26 @@
 cmake_minimum_required(VERSION 3.16)
 project(ChessEngine LANGUAGES CXX)
 
+# Only affects single-config generators (Makefiles, plain Ninja); multi-config
+# generators (Visual Studio, Ninja Multi-Config) ignore this and pick the
+# config via --config Debug/Release at build time instead.
+if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if (MSVC)
     add_compile_options(/W4 /permissive-)
+
+    # Optimize Release builds (/O2 /DNDEBUG are CMake defaults already;
+    # /GL + /LTCG add whole-program/cross-TU inlining, matching GCC LTO)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /GL")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG")
+    set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} /LTCG")
 else()
     # Warnings
     add_compile_options(-Wall -Wextra -Wpedantic)

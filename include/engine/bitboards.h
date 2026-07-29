@@ -1,4 +1,5 @@
 #pragma once
+#include <bit>
 #include "types.h"
 
 namespace engine {
@@ -64,15 +65,15 @@ extern Bitboard castleMasks[BlackQueenSide + 1];
 
 
 inline int popcount(Bitboard b) {
-    return __builtin_popcountll(b);
+    return std::popcount(b);
 }
 
 inline int lsb(Bitboard b) {
-    return __builtin_ctzll(b);
+    return std::countr_zero(b);
 }
 
 inline int msb(Bitboard b) {
-    return 63 - __builtin_clzll(b);
+    return 63 - std::countl_zero(b);
 }
 
 inline Square pop_lsb(Bitboard& bb) {
@@ -82,7 +83,7 @@ inline Square pop_lsb(Bitboard& bb) {
 }
 
 inline int squarescan_lsb(Bitboard& b) {
-    int sq = __builtin_ctzll(b);
+    int sq = std::countr_zero(b);
     b &= (b - 1);
     return sq;
 }
