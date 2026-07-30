@@ -1153,6 +1153,51 @@ void runEnPassantMoveTest() {
                             : "en-passant move tests FAILED.\n");
 }
 
+void runEpRepetitionHashTest() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running ep-square repetition hash test...\n";
+
+    // A double push whose ep target has no enemy pawn adjacent must be
+    // hash-identical to the same final placement with no ep square at all —
+    // the "possible moves" are unaffected by it, so the position is the same
+    // for repetition purposes. See board.cpp makeMove/fenToBoard.
+    {
+        Board viaPush;
+        State s0{}, s1{};
+        viaPush.fenToBoard("4k3/5p2/8/8/8/8/8/4K3 b - - 0 1", &s0);
+        viaPush.makeMove(makeMoveBasic(F7, F5), &s1);
+
+        Board viaFen;
+        State t0{};
+        viaFen.fenToBoard("4k3/8/8/5p2/8/8/8/4K3 w - - 0 1", &t0);
+
+        expectTrue(viaPush.epSquare() == NOSQUARE, "uncapturable ep square not set");
+        expectEq(viaPush.key(), viaFen.key(), "uncapturable ep does not affect hash");
+    }
+
+    // A double push whose ep target CAN actually be captured must set the ep
+    // square, and must hash differently from the same placement without it,
+    // since the legal moves genuinely differ.
+    {
+        Board viaPush;
+        State s0{}, s1{};
+        viaPush.fenToBoard("4k3/5p2/8/4P1P1/8/8/8/4K3 b - - 0 1", &s0);
+        viaPush.makeMove(makeMoveBasic(F7, F5), &s1);
+
+        Board viaFen;
+        State t0{};
+        viaFen.fenToBoard("4k3/8/8/4PpP1/8/8/8/4K3 w - - 0 1", &t0);
+
+        expectTrue(viaPush.epSquare() == F6, "capturable ep square is set");
+        expectTrue(viaPush.key() != viaFen.key(), "capturable ep does affect hash");
+    }
+
+    std::cout << (failures == 0 ? "All ep-square repetition hash tests passed.\n"
+                            : "ep-square repetition hash tests FAILED.\n");
+}
+
 void runPromotionMoveTest() {
     using namespace engine;
 
@@ -1822,6 +1867,7 @@ namespace tests_cli{
         tests::runQuietMoveTest();
         tests::runCaptureMoveTest();
         tests::runEnPassantMoveTest();
+        tests::runEpRepetitionHashTest();
         tests::runPromotionMoveTest();
         tests::runGenAttacksBBTests();
         tests::runLegalMoveTests();

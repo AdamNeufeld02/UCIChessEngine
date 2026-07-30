@@ -126,7 +126,13 @@ void Board::fenToBoard(std::string fenString, State* rootState) {
         int rank = rankFromChar(epStr[1]);
         if (file < 0 || file > 7 || rank < 0 || rank > 7)
             throw std::runtime_error("Invalid FEN: ep square coords");
-        rootState->epSquare = squareFromFileRank(file, rank);
+        Square candidateEp = squareFromFileRank(file, rank);
+
+        // As in makeMove: only treat this as a real ep square if a capture is
+        // actually available, so hashing/repetition stays consistent with positions
+        // reached via makeMove rather than FEN.
+        rootState->epSquare = (pawnAttacks[~colToMove][candidateEp] & pieces(colToMove, PAWN))
+            ? candidateEp : NOSQUARE;
     }
 
     rootState->captured = EMPTY;
@@ -202,8 +208,15 @@ void Board::makeMove(Move move, State* newState) {
     if (typeOf(moved) == PAWN) {
         newState->halfmoveClock = 0;
         if ((to ^ from) == 16) {
-            newState->epSquare = us == WHITE ? static_cast<Square>(from + 8) : static_cast<Square>(from - 8);
-            newState->boardKey ^= zobrist::epFile[newState->epSquare & 7];
+            Square candidateEp = us == WHITE ? static_cast<Square>(from + 8) : static_cast<Square>(from - 8);
+            // Only counts as a "real" ep square (and only affects the hash / repetition
+            // comparison) if the opponent actually has a pawn that can capture there.
+            // Otherwise the position is indistinguishable from one with no ep square at
+            // all, per the "possible moves are the same" repetition rule.
+            if (pawnAttacks[us][candidateEp] & pieces(them, PAWN)) {
+                newState->epSquare = candidateEp;
+                newState->boardKey ^= zobrist::epFile[candidateEp & 7];
+            }
         }
     }
 

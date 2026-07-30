@@ -264,8 +264,12 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     Value staticEval = NOVALUE;
     auto [ttHit, ttData, ttWriter] = tt.probe(board.key());
     if (ttHit) {
-        
-        if (ttData.depth >= depth) {
+        // A TT entry is keyed only on the Zobrist hash, which says nothing about
+        // whether THIS occurrence of the position is one repeat away from a forced
+        // draw (repetitionCount depends on the actual path, not the hash). Trusting
+        // a cached score here can hide an approaching threefold entirely, so only
+        // take the cutoff when this path hasn't already repeated this position.
+        if (ttData.depth >= depth && board.st->repetitionCount == 0) {
             Value ttValue = fromTTScore(ttData.value, ss->ply);
             if (ttData.bound == EXACT) {
                 return ttValue;
@@ -379,7 +383,12 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
         // fail high
         if (currValue >= beta) {
-            ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
+            // Don't cache a score for a position that's already repeated once on this
+            // path — it's one repeat away from a forced draw, and that risk is
+            // path-specific, not something a later, different-path probe should inherit.
+            if (board.st->repetitionCount == 0) {
+                ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
+            }
             updateHistories(board, ss, searchedCaptures, searchedQuiets, move, depth + QSEARCHHISTORYDEPTH);
             if (isQuiet && killerMoves[board.ply()][0] != move) {
                 killerMoves[board.ply()][1] = killerMoves[board.ply()][0];
@@ -414,7 +423,9 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         }
     } 
     Bound b = pvNode && topMove != NOMOVE ? EXACT : UPPER;
-    ttWriter.write(board.key(), topMove, staticEval, toTTScore(topScore, ss->ply), depth, tt.currentGeneration(), b);
+    if (board.st->repetitionCount == 0) {
+        ttWriter.write(board.key(), topMove, staticEval, toTTScore(topScore, ss->ply), depth, tt.currentGeneration(), b);
+    }
     updateHistories(board, ss, searchedCaptures, searchedQuiets, topMove, depth + QSEARCHHISTORYDEPTH);
     return topScore;
 }
@@ -455,7 +466,7 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     }  
 
     if (ttHit) {
-        if (ttData.depth >= 0) {
+        if (ttData.depth >= 0 && board.st->repetitionCount == 0) {
             Value ttValue = fromTTScore(ttData.value, ss->ply);
             if (ttData.bound == EXACT) {
                 return ttValue;
@@ -514,8 +525,10 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
             }
         }
 
-        if (currValue >= beta) {      
-            ttWriter.write(board.key(), move, NOVALUE, toTTScore(currValue, ss->ply), 0, tt.currentGeneration(), LOWER);      
+        if (currValue >= beta) {
+            if (board.st->repetitionCount == 0) {
+                ttWriter.write(board.key(), move, NOVALUE, toTTScore(currValue, ss->ply), 0, tt.currentGeneration(), LOWER);
+            }
             updateHistories(board, ss, searchedCaptures, searchedQuiets, move, QSEARCHHISTORYDEPTH);
             return currValue;
         }
@@ -534,7 +547,9 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     if (movesSearched == 0 && board.checkers()) return -VALUEMATE + ss->ply;
 
     Bound b = raisedAlpha ? EXACT : UPPER;
-    ttWriter.write(board.key(), topMove, NOVALUE, toTTScore(topScore, ss->ply), 0, tt.currentGeneration(), b);
+    if (board.st->repetitionCount == 0) {
+        ttWriter.write(board.key(), topMove, NOVALUE, toTTScore(topScore, ss->ply), 0, tt.currentGeneration(), b);
+    }
     updateHistories(board, ss, searchedCaptures, searchedQuiets, topMove, QSEARCHHISTORYDEPTH);
     return topScore;
 }
