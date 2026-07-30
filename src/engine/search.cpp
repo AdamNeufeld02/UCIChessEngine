@@ -383,12 +383,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
         // fail high
         if (currValue >= beta) {
-            // Don't cache a score for a position that's already repeated once on this
-            // path — it's one repeat away from a forced draw, and that risk is
-            // path-specific, not something a later, different-path probe should inherit.
-            if (board.st->repetitionCount == 0) {
-                ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
-            }
+            ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
             updateHistories(board, ss, searchedCaptures, searchedQuiets, move, depth + QSEARCHHISTORYDEPTH);
             if (isQuiet && killerMoves[board.ply()][0] != move) {
                 killerMoves[board.ply()][1] = killerMoves[board.ply()][0];
@@ -423,9 +418,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         }
     } 
     Bound b = pvNode && topMove != NOMOVE ? EXACT : UPPER;
-    if (board.st->repetitionCount == 0) {
-        ttWriter.write(board.key(), topMove, staticEval, toTTScore(topScore, ss->ply), depth, tt.currentGeneration(), b);
-    }
+    ttWriter.write(board.key(), topMove, staticEval, toTTScore(topScore, ss->ply), depth, tt.currentGeneration(), b);
     updateHistories(board, ss, searchedCaptures, searchedQuiets, topMove, depth + QSEARCHHISTORYDEPTH);
     return topScore;
 }
@@ -526,9 +519,7 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
         }
 
         if (currValue >= beta) {
-            if (board.st->repetitionCount == 0) {
-                ttWriter.write(board.key(), move, NOVALUE, toTTScore(currValue, ss->ply), 0, tt.currentGeneration(), LOWER);
-            }
+            ttWriter.write(board.key(), move, NOVALUE, toTTScore(currValue, ss->ply), 0, tt.currentGeneration(), LOWER);
             updateHistories(board, ss, searchedCaptures, searchedQuiets, move, QSEARCHHISTORYDEPTH);
             return currValue;
         }
@@ -547,9 +538,7 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     if (movesSearched == 0 && board.checkers()) return -VALUEMATE + ss->ply;
 
     Bound b = raisedAlpha ? EXACT : UPPER;
-    if (board.st->repetitionCount == 0) {
-        ttWriter.write(board.key(), topMove, NOVALUE, toTTScore(topScore, ss->ply), 0, tt.currentGeneration(), b);
-    }
+    ttWriter.write(board.key(), topMove, NOVALUE, toTTScore(topScore, ss->ply), 0, tt.currentGeneration(), b);
     updateHistories(board, ss, searchedCaptures, searchedQuiets, topMove, QSEARCHHISTORYDEPTH);
     return topScore;
 }
