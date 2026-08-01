@@ -41,9 +41,10 @@ void Engine::calculateLimits(SearchLimits& limits) {
     int myTime = (board.sideToMove() == WHITE) ? limits.wtime_ms : limits.btime_ms;
     int myInc  = (board.sideToMove() == WHITE) ? limits.winc_ms  : limits.binc_ms;
 
-    if (myTime <= 0) return;
+    myTime = std::max(myTime, 1);
 
     uint64_t T_move = static_cast<uint64_t>(myTime / 20) + static_cast<uint64_t>(myInc / 2);
+    T_move = std::max<uint64_t>(T_move, 1);
     limits.softTimeLimitMs = T_move * 0.9;
     limits.hardTimeLimitMs = T_move;
 }
