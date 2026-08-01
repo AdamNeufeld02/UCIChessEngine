@@ -128,8 +128,10 @@ SearchLimits UCIEngine::parseGo(std::istringstream& iss) {
     while (iss >> token) {
         if (token == "wtime") {
             iss >> limits.wtime_ms;
+            limits.hasTimeControl = true;
         } else if (token == "btime") {
             iss >> limits.btime_ms;
+            limits.hasTimeControl = true;
         } else if (token == "winc") {
             iss >> limits.winc_ms;
         } else if (token == "binc") {

@@ -28,12 +28,14 @@ void Engine::setTranspositionTable(size_t mb) {
 }
 
 void Engine::calculateLimits(SearchLimits& limits) {
-    if (limits.infinite || limits.depth > 0 || limits.movetime_ms > 0) {
+    if (limits.infinite || limits.depth > 0 || limits.movetime_ms > 0 || !limits.hasTimeControl) {
         if (limits.infinite) {
             limits.hardTimeLimitMs = limits.softTimeLimitMs = 0;
         } else if (limits.movetime_ms > 0) {
             limits.softTimeLimitMs = limits.movetime_ms * 0.9;
             limits.hardTimeLimitMs = limits.movetime_ms;
+        } else if (!limits.hasTimeControl) {
+            limits.hardTimeLimitMs = limits.softTimeLimitMs = 0;
         }
         return;
     }
