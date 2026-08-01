@@ -85,8 +85,8 @@ void Worker::startSearching() {
     threads.decrementActive();
     if (threadID == 0) {
         threads.waitForOthers(threadID);
-        Move best = threads.voteBestMove();
-        threads.fireBestMove(best, bestScore, bestDepth, bestPv);
+        Thread* winner = threads.voteBestMove();
+        threads.fireBestMove(winner->getBestMove(), winner->getBestScore(), winner->getBestDepth(), winner->getBestPv());
     }
 }
 
@@ -123,9 +123,11 @@ void Worker::iterativeDeepening() {
 
         if (threads.stop) return;
 
-        for (int i = 0; ss->pv[i] != NOMOVE && i < MAXPLY; i++) {
-            bestPv[i] = ss->pv[i];
+        int pvLen = 0;
+        for (; ss->pv[pvLen] != NOMOVE && pvLen < MAXPLY; pvLen++) {
+            bestPv[pvLen] = ss->pv[pvLen];
         }
+        if (pvLen < MAXPLY) bestPv[pvLen] = NOMOVE;
 
         bestScore = alpha;
         bestDepth = depth;
@@ -257,6 +259,10 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
     if (board.isDraw() || board.isRepetitionDraw()) return VALUEDRAW;
 
+    alpha = std::max(alpha, -VALUEMATE + ss->ply);
+    beta = std::min(beta, VALUEMATE - ss->ply - 1);
+    if (alpha >= beta) return alpha;
+
     if (depth <= 0) return qsearch(ss, board, alpha, beta);
 
     // Probe transposition-table
@@ -264,11 +270,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     Value staticEval = NOVALUE;
     auto [ttHit, ttData, ttWriter] = tt.probe(board.key());
     if (ttHit) {
-        // A TT entry is keyed only on the Zobrist hash, which says nothing about
-        // whether THIS occurrence of the position is one repeat away from a forced
-        // draw (repetitionCount depends on the actual path, not the hash). Trusting
-        // a cached score here can hide an approaching threefold entirely, so only
-        // take the cutoff when this path hasn't already repeated this position.
         if (ttData.depth >= depth && board.st->repetitionCount == 0) {
             Value ttValue = fromTTScore(ttData.value, ss->ply);
             if (ttData.bound == EXACT) {
@@ -490,7 +491,7 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
         // pruning
         if (!board.checkers()) {
             if (board.captureGenType(move)) {
-                Value captVal = moveFlag(move) == ENPASSANT ? PAWN : W.material[typeOf(board.pieceOn(toSq(move)))].mg;
+                Value captVal = moveFlag(move) == ENPASSANT ? W.material[PAWN].mg : W.material[typeOf(board.pieceOn(toSq(move)))].mg;
                 Value promVal = moveFlag(move) == PROMOTION ? W.material[promoPiece(move)].mg - W.material[PAWN].mg : 0;
 
                 // delta pruning
@@ -538,8 +539,10 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
     if (movesSearched == 0 && board.checkers()) return -VALUEMATE + ss->ply;
 
     Bound b = raisedAlpha ? EXACT : UPPER;
-    ttWriter.write(board.key(), topMove, NOVALUE, toTTScore(topScore, ss->ply), 0, tt.currentGeneration(), b);
-    updateHistories(board, ss, searchedCaptures, searchedQuiets, topMove, QSEARCHHISTORYDEPTH);
+    if (topMove != NOMOVE) {
+        ttWriter.write(board.key(), topMove, NOVALUE, toTTScore(topScore, ss->ply), 0, tt.currentGeneration(), b);
+        updateHistories(board, ss, searchedCaptures, searchedQuiets, topMove, QSEARCHHISTORYDEPTH);
+    }
     return topScore;
 }
 

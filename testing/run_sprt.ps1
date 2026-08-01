@@ -78,6 +78,35 @@ if ([double]::IsNaN($Elo0) -or [double]::IsNaN($Elo1)) {
     else { $Elo0 = 0.0; $Elo1 = 5.0 }
 }
 
+function Wait-ExeReady {
+    # A freshly-written .exe can be transiently refused by Windows Application
+    # Control / SmartScreen-style scanning ("process creation failed") right
+    # after it's copied into place. Poke it with a throwaway run -- closing
+    # its stdin immediately signals EOF, so the UCI loop exits on its own --
+    # so any such scan happens now, before fastchess needs it to launch.
+    param([string]$ExePath, [int]$MaxAttempts = 6)
+
+    for ($i = 1; $i -le $MaxAttempts; $i++) {
+        try {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $ExePath
+            $psi.RedirectStandardInput = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.UseShellExecute = $false
+
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            $proc.StandardInput.Close()
+            if (-not $proc.WaitForExit(3000)) { $proc.Kill() }
+            return
+        } catch {
+            if ($i -eq $MaxAttempts) {
+                throw "'$ExePath' still won't launch after $MaxAttempts attempts (Windows Application Control likely blocking it): $_"
+            }
+            Start-Sleep -Milliseconds 1000
+        }
+    }
+}
+
 function Build-Engine {
     param([string]$SourceDir, [string]$BuildDir, [string]$Label)
 
@@ -99,6 +128,7 @@ function Build-Engine {
 $devExeSrc = Build-Engine -SourceDir $RepoRoot -BuildDir $DevBuildDir -Label "dev"
 $devExe = "$EnginesDir\dev.exe"
 Copy-Item $devExeSrc $devExe -Force
+Wait-ExeReady -ExePath $devExe
 
 # --- Build "baseline" from the requested git ref, via a throwaway worktree ---
 if (Test-Path $WorktreeDir) {
@@ -112,6 +142,7 @@ try {
     $baseExeSrc = Build-Engine -SourceDir $WorktreeDir -BuildDir $BaseBuildDir -Label "baseline ($BaselineRef)"
     $baseExe = "$EnginesDir\baseline.exe"
     Copy-Item $baseExeSrc $baseExe -Force
+    Wait-ExeReady -ExePath $baseExe
 } finally {
     git -C $RepoRoot worktree remove --force $WorktreeDir 2>$null
 }

@@ -31,6 +31,7 @@ public:
     int getBestDepth();
     int getBestScore();
     int getPVLength();
+    Move* getBestPv();
 
     size_t idx;
 private:
@@ -51,7 +52,7 @@ public:
     ThreadPool();
     void startSearching(const Board& board, const SearchLimits sl);
     void clearThreads();
-    Move voteBestMove();
+    Thread* voteBestMove();
     size_t numThreads();
     void set(size_t nThreads, TranspositionTable& tt);
     void waitForAllThreads();

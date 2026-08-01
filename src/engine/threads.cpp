@@ -86,6 +86,11 @@ int Thread::getPVLength() {
     return pvLength;
 }
 
+Move* Thread::getBestPv() {
+    std::lock_guard<std::mutex> lk(mutex);
+    return worker.bestPv;
+}
+
 ThreadPool::ThreadPool()
 {
     stop = false;
@@ -129,7 +134,7 @@ void ThreadPool::clearThreads() {
     }
 }
 
-Move ThreadPool::voteBestMove() {
+Thread* ThreadPool::voteBestMove() {
     Thread* bestThread = threads[0].get();
     Value minScore = NOVALUE;
 
@@ -158,7 +163,7 @@ Move ThreadPool::voteBestMove() {
             bestThread = th.get();
         }
     }
-    return bestThread->getBestMove();
+    return bestThread;
 }
 
 size_t ThreadPool::numThreads() {
