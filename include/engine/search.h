@@ -90,7 +90,8 @@ private:
     
     Move killerMoves[MAXPLY][2];
     int reductions[MAXMOVES];
-    
+    PawnEntry pawnTable[PAWN_TABLE_SIZE];
+
 
     Board rootBoard;
     SearchLimits limits;

@@ -436,8 +436,8 @@ bool load_eval_weights_from_file(const std::string& path) {
     return false;
 }
 
-Value evaluate(Board& board) {
-    Colour sideToMove = board.sideToMove();   
+Value evaluate(Board& board, PawnEntry* pawnTable) {
+    Colour sideToMove = board.sideToMove();
     int gamePhase = 0;
     gamePhase += popcount(board.pieces(WHITE, KNIGHT) | board.pieces(BLACK, KNIGHT)) * gamePhaseWeightings[KNIGHT];
     gamePhase += popcount(board.pieces(WHITE, BISHOP) | board.pieces(BLACK, BISHOP)) * gamePhaseWeightings[BISHOP];
@@ -446,14 +446,34 @@ Value evaluate(Board& board) {
 
     Score matScore = board.material[sideToMove] - board.material[~sideToMove];
     Score psqtScore = board.psqtv[sideToMove] - board.psqtv[~sideToMove];
-    Score pawnStruct = sideToMove == WHITE ? evaluatePawnStructure<WHITE>(board) - evaluatePawnStructure<BLACK>(board) : 
-                                             evaluatePawnStructure<BLACK>(board) - evaluatePawnStructure<WHITE>(board);
-    Score kingShelter = sideToMove == WHITE ? evaluateKingShelter<WHITE>(board) - evaluateKingShelter<BLACK>(board) :
-                                              evaluateKingShelter<BLACK>(board) - evaluateKingShelter<WHITE>(board);
+
+    PawnEntry& pe = pawnTable[board.pawnKey() & (PAWN_TABLE_SIZE - 1)];
+    if (pe.key != board.pawnKey()) {
+        pe.key = board.pawnKey();
+        pe.pawnScore[WHITE] = evaluatePawnStructure<WHITE>(board);
+        pe.pawnScore[BLACK] = evaluatePawnStructure<BLACK>(board);
+        // Force a shelter recompute below - a colliding/replaced entry's
+        // cached king squares belong to a different pawn structure.
+        pe.kingSquare[WHITE] = NOSQUARE;
+        pe.kingSquare[BLACK] = NOSQUARE;
+    }
+    Square wksq = board.kingSquare(WHITE);
+    if (pe.kingSquare[WHITE] != wksq) {
+        pe.kingSquare[WHITE] = wksq;
+        pe.shelterScore[WHITE] = evaluateKingShelter<WHITE>(board);
+    }
+    Square bksq = board.kingSquare(BLACK);
+    if (pe.kingSquare[BLACK] != bksq) {
+        pe.kingSquare[BLACK] = bksq;
+        pe.shelterScore[BLACK] = evaluateKingShelter<BLACK>(board);
+    }
+
+    Score pawnStruct   = pe.pawnScore[sideToMove] - pe.pawnScore[~sideToMove];
+    Score kingShelter  = pe.shelterScore[sideToMove] - pe.shelterScore[~sideToMove];
     Score pieceActivity = sideToMove == WHITE ? evaluatePieceActivity<WHITE>(board) - evaluatePieceActivity<BLACK>(board) :
                                                 evaluatePieceActivity<BLACK>(board) - evaluatePieceActivity<WHITE>(board);
 
-    
+
     int mgPhase = gamePhase > 24 ? 24 : gamePhase;
     int egPhase = 24 - mgPhase;
     return ((matScore.mg + psqtScore.mg + pawnStruct.mg + kingShelter.mg + pieceActivity.mg + W.tempo.mg) * mgPhase +

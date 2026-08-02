@@ -30,6 +30,7 @@ void Board::initFields() {
 
 void Board::initRootState(State* rootState) {
     rootState->boardKey = (ZobristKey)0ULL;
+    rootState->pawnKey = (ZobristKey)0ULL;
     rootState->castlingRights = CastlingRightsNone;
     rootState->captured = EMPTY;
     rootState->checkers = 0ULL;
@@ -176,11 +177,13 @@ void Board::makeMove(Move move, State* newState) {
             captSq = us == WHITE? captSq - 8 : captSq + 8;
         }
         newState->boardKey ^= zobrist::psq[capt][captSq];
+        if (typeOf(capt) == PAWN) newState->pawnKey ^= zobrist::psq[capt][captSq];
         removePiece(static_cast<Square>(captSq));
         newState->halfmoveClock = 0;
     }
     if (flag == PROMOTION) {
         newState->boardKey ^= zobrist::psq[pieceOn(from)][from];
+        newState->pawnKey ^= zobrist::psq[pieceOn(from)][from];
         removePiece(from);
         putPiece(makePiece(us, promoPiece(move)), from);
         newState->boardKey ^= zobrist::psq[pieceOn(from)][from];
@@ -220,9 +223,12 @@ void Board::makeMove(Move move, State* newState) {
         }
     }
 
+    bool moverIsPawn = typeOf(pieceOn(from)) == PAWN;
     newState->boardKey ^= zobrist::psq[pieceOn(from)][from];
+    if (moverIsPawn) newState->pawnKey ^= zobrist::psq[pieceOn(from)][from];
     movePiece(from, to);
     newState->boardKey ^= zobrist::psq[pieceOn(to)][to];
+    if (moverIsPawn) newState->pawnKey ^= zobrist::psq[pieceOn(to)][to];
 
     colToMove = ~colToMove;
     newState->boardKey ^= zobrist::sideToMoveKey;
@@ -306,11 +312,15 @@ void Board::undoNullMove() {
 
 void Board::calcZobristHashFromScratch() {
     ZobristKey key = 0ULL;
+    ZobristKey pawnKey = 0ULL;
 
     for (int sq = 0; sq < SQUARECOUNT; ++sq) {
         Piece pc = board[sq];
         if (pc != EMPTY) {
             key ^= zobrist::psq[pc][sq];
+            if (typeOf(pc) == PAWN) {
+                pawnKey ^= zobrist::psq[pc][sq];
+            }
         }
     }
 
@@ -326,6 +336,7 @@ void Board::calcZobristHashFromScratch() {
     }
 
     st->boardKey = key;
+    st->pawnKey = pawnKey;
 }
 
 Bitboard Board::getAttackers(Square sq, Colour col, Bitboard occ) const {

@@ -190,6 +190,24 @@ inline engine::ZobristKey recomputeZobrist(const engine::Board& b, const engine:
     return key;
 }
 
+// Recompute the pawn-only zobrist key from scratch (both colours, no
+// side-to-move component) to cross-check incremental maintenance in
+// board.cpp's makeMove.
+inline engine::ZobristKey recomputePawnZobrist(const engine::Board& b) {
+    using namespace engine;
+    ZobristKey key = 0ULL;
+
+    for (int sq = 0; sq < SQUARECOUNT; ++sq) {
+        Square s = static_cast<Square>(sq);
+        Piece pc = b.pieceOn(s);
+        if (pc != EMPTY && typeOf(pc) == PAWN) {
+            key ^= zobrist::psq[pc][sq];
+        }
+    }
+
+    return key;
+}
+
 static inline uint64_t test_mul_hi_u64(uint64_t a, uint64_t b) {
 #if defined(_MSC_VER) && defined(_M_X64)
     return __umulh(a, b);
@@ -1845,6 +1863,222 @@ void runSeeThresholdTests() {
                                 : "SEE threshold tests FAILED.\n");
 }
 
+void runPawnKeyIncrementalTests() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running incremental pawn-key maintenance tests...\n";
+
+    // 1) Quiet pawn move: key changes and matches from-scratch recompute; undo restores it.
+    {
+        Board board;
+        State root{}, after{};
+        board.fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &root);
+
+        ZobristKey beforeKey = board.pawnKey();
+        expectEq(beforeKey, recomputePawnZobrist(board), "startpos pawn key matches recompute");
+
+        Move e2e4 = makeMoveBasic(E2, E4);
+        board.makeMove(e2e4, &after);
+        expectEq(board.pawnKey(), recomputePawnZobrist(board), "pawn key after e2e4 matches recompute");
+        expectTrue(board.pawnKey() != beforeKey, "pawn key changes after a pawn push");
+
+        board.undoMove(e2e4);
+        expectEq(board.pawnKey(), beforeKey, "pawn key restored after undo of quiet pawn move");
+    }
+
+    // 2) Non-pawn move: pawn key must be completely unaffected.
+    {
+        Board board;
+        State root{}, after{};
+        board.fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &root);
+        ZobristKey beforeKey = board.pawnKey();
+
+        Move g1f3 = makeMoveBasic(G1, F3);
+        board.makeMove(g1f3, &after);
+        expectEq(board.pawnKey(), beforeKey, "pawn key unchanged after knight move");
+        expectEq(board.pawnKey(), recomputePawnZobrist(board), "pawn key after knight move matches recompute");
+
+        board.undoMove(g1f3);
+        expectEq(board.pawnKey(), beforeKey, "pawn key restored after undo of knight move");
+    }
+
+    // 3) Pawn capture.
+    {
+        Board board;
+        State root{}, after{};
+        board.fenToBoard("k7/8/8/3p4/4P3/8/8/K7 w - - 0 1", &root);
+
+        Move e4d5 = makeMoveBasic(E4, D5);
+        board.makeMove(e4d5, &after);
+        expectEq(board.pawnKey(), recomputePawnZobrist(board), "pawn key after pawn capture matches recompute");
+
+        board.undoMove(e4d5);
+        expectEq(board.pawnKey(), recomputePawnZobrist(board), "pawn key restored after undo of pawn capture");
+    }
+
+    // 4) En-passant capture.
+    {
+        Board board;
+        State root{}, after{};
+        board.fenToBoard("k7/8/8/3pP3/8/8/8/K7 w - d6 0 1", &root);
+
+        Move epMove = makeMoveWithFlag(E5, D6, ENPASSANT);
+        board.makeMove(epMove, &after);
+        expectEq(board.pawnKey(), recomputePawnZobrist(board), "pawn key after ep capture matches recompute");
+
+        board.undoMove(epMove);
+        expectEq(board.pawnKey(), recomputePawnZobrist(board), "pawn key restored after undo of ep capture");
+    }
+
+    // 5) Promotion: the pawn must leave the pawn key entirely (the promoted
+    // piece is not a pawn), not just move square.
+    {
+        Board board;
+        State root{}, after{};
+        board.fenToBoard("k3b3/4P3/8/8/8/8/8/7K w - - 0 1", &root);
+
+        Move promo = makePromoMove(E7, E8, QUEEN);
+        board.makeMove(promo, &after);
+        expectEq(board.pawnKey(), recomputePawnZobrist(board), "pawn key after promotion matches recompute");
+
+        board.undoMove(promo);
+        expectEq(board.pawnKey(), recomputePawnZobrist(board), "pawn key restored after undo of promotion");
+    }
+
+    // 6) Castling: no pawns involved, pawn key must not move at all.
+    {
+        Board board;
+        State root{}, after{};
+        board.fenToBoard("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1", &root);
+        ZobristKey beforeKey = board.pawnKey();
+
+        Move castle = makeMoveWithFlag(E1, G1, CASTLE);
+        board.makeMove(castle, &after);
+        expectEq(board.pawnKey(), beforeKey, "pawn key unchanged after castling");
+
+        board.undoMove(castle);
+        expectEq(board.pawnKey(), beforeKey, "pawn key unchanged after undo of castling");
+    }
+
+    // 7) Null move: pawn key must not move at all.
+    {
+        Board board;
+        State root{}, after{};
+        board.fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &root);
+        ZobristKey beforeKey = board.pawnKey();
+
+        board.makeNullMove(&after);
+        expectEq(board.pawnKey(), beforeKey, "pawn key unchanged after null move");
+
+        board.undoNullMove();
+        expectEq(board.pawnKey(), beforeKey, "pawn key unchanged after undo null move");
+    }
+
+    std::cout << (failures == 0 ? "All incremental pawn-key tests passed.\n"
+                                : "incremental pawn-key tests FAILED.\n");
+}
+
+void runPawnHashCacheTests() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running pawn hash cache tests...\n";
+
+    // Function-local static: PAWN_TABLE_SIZE entries at 64 bytes each is a
+    // couple MB, too big to want repeatedly on the stack.
+    static PawnEntry table[PAWN_TABLE_SIZE];
+
+    // 1) A probe populates the entry, and the cached values match direct,
+    // uncached calls to the same eval terms.
+    {
+        std::fill(std::begin(table), std::end(table), PawnEntry{});
+
+        Board board;
+        State root{};
+        board.fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &root);
+
+        Value v1 = evaluate(board, table);
+        Value v2 = evaluate(board, table);
+        expectEqInt(v1, v2, "pawn hash: repeated eval on an unchanged position is stable");
+
+        PawnEntry& pe = table[board.pawnKey() & (PAWN_TABLE_SIZE - 1)];
+        expectEq(pe.key, board.pawnKey(), "pawn hash: entry key matches position after probe");
+
+        Score freshWhite = evaluatePawnStructure<WHITE>(board);
+        Score freshBlack = evaluatePawnStructure<BLACK>(board);
+        expectTrue(pe.pawnScore[WHITE].mg == freshWhite.mg && pe.pawnScore[WHITE].eg == freshWhite.eg,
+                   "pawn hash: cached white pawn score matches fresh computation");
+        expectTrue(pe.pawnScore[BLACK].mg == freshBlack.mg && pe.pawnScore[BLACK].eg == freshBlack.eg,
+                   "pawn hash: cached black pawn score matches fresh computation");
+
+        Score freshShelterWhite = evaluateKingShelter<WHITE>(board);
+        expectTrue(pe.shelterScore[WHITE].mg == freshShelterWhite.mg && pe.shelterScore[WHITE].eg == freshShelterWhite.eg,
+                   "pawn hash: cached white shelter score matches fresh computation");
+    }
+
+    // 2) A king-only move (pawn key unchanged) must recompute shelter but
+    // must NOT touch the cached pawn-structure scores.
+    {
+        std::fill(std::begin(table), std::end(table), PawnEntry{});
+
+        Board board;
+        State root{}, after{};
+        board.fenToBoard("4k3/8/8/8/4P3/8/8/7K w - - 0 1", &root);
+
+        evaluate(board, table);
+        PawnEntry& pe = table[board.pawnKey() & (PAWN_TABLE_SIZE - 1)];
+        Score pawnScoreBefore[COLOURNB] = {pe.pawnScore[WHITE], pe.pawnScore[BLACK]};
+
+        Move kingMove = makeMoveBasic(H1, H2);
+        board.makeMove(kingMove, &after);
+        expectEq(board.pawnKey(), pe.key, "pawn hash: pawn key unchanged after a king-only move (sanity)");
+
+        evaluate(board, table);
+        expectTrue(pe.pawnScore[WHITE].mg == pawnScoreBefore[WHITE].mg && pe.pawnScore[WHITE].eg == pawnScoreBefore[WHITE].eg,
+                   "pawn hash: pawnScore[WHITE] untouched by a king-only move");
+        expectTrue(pe.pawnScore[BLACK].mg == pawnScoreBefore[BLACK].mg && pe.pawnScore[BLACK].eg == pawnScoreBefore[BLACK].eg,
+                   "pawn hash: pawnScore[BLACK] untouched by a king-only move");
+        expectEq(pe.kingSquare[WHITE], board.kingSquare(WHITE), "pawn hash: cached white king square updated after king move");
+    }
+
+    // 3) A stale/colliding entry (wrong key) must be fully replaced, not
+    // partially reused.
+    {
+        std::fill(std::begin(table), std::end(table), PawnEntry{});
+
+        Board board;
+        State root{};
+        board.fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &root);
+
+        size_t idx = board.pawnKey() & (PAWN_TABLE_SIZE - 1);
+        table[idx].key = board.pawnKey() ^ 0xABCDEF1234567890ULL;
+        table[idx].pawnScore[WHITE] = Score{9999, 9999};
+        table[idx].pawnScore[BLACK] = Score{9999, 9999};
+        table[idx].kingSquare[WHITE] = A1;
+        table[idx].kingSquare[BLACK] = A1;
+
+        evaluate(board, table);
+
+        Score freshWhite = evaluatePawnStructure<WHITE>(board);
+        expectEq(table[idx].key, board.pawnKey(), "pawn hash: stale entry key replaced after mismatch");
+        expectTrue(table[idx].pawnScore[WHITE].mg == freshWhite.mg && table[idx].pawnScore[WHITE].eg == freshWhite.eg,
+                   "pawn hash: stale garbage pawnScore overwritten with fresh computation");
+    }
+
+    // 4) Masked indexing always stays in bounds.
+    {
+        uint64_t testKeys[] = {0ULL, ~0ULL, 1ULL, (uint64_t)PAWN_TABLE_SIZE, (uint64_t)PAWN_TABLE_SIZE - 1, (uint64_t)PAWN_TABLE_SIZE + 1};
+        for (uint64_t k : testKeys) {
+            size_t idx = k & (PAWN_TABLE_SIZE - 1);
+            expectTrue(idx < PAWN_TABLE_SIZE, "pawn hash: masked index stays in bounds");
+        }
+    }
+
+    std::cout << (failures == 0 ? "All pawn hash cache tests passed.\n"
+                                : "pawn hash cache tests FAILED.\n");
+}
+
 }
 
 namespace tests_cli{
@@ -1875,6 +2109,8 @@ namespace tests_cli{
         tests::runFastIndexTests();
         tests::runTranspositionTableBasicTests();
         tests::runSeeThresholdTests();
+        tests::runPawnKeyIncrementalTests();
+        tests::runPawnHashCacheTests();
         return 0;
     }
 }

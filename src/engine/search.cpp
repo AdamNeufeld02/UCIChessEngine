@@ -289,7 +289,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     }
 
     if (staticEval == NOVALUE) {
-        staticEval = evaluate(board);
+        staticEval = evaluate(board, pawnTable);
     }
 
     // Reverse Futility Pruning
@@ -450,7 +450,7 @@ Value Worker::qsearch(SearchStack* ss, Board& board, int alpha, int beta) {
         standPat = ttData.eval;
     }
     if (standPat == NOVALUE) {
-        standPat = evaluate(board);
+        standPat = evaluate(board, pawnTable);
     }
 
     if (!board.checkers()) {

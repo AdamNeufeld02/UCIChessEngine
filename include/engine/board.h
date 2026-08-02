@@ -15,6 +15,7 @@ namespace engine {
 
 struct State{
     ZobristKey boardKey;
+    ZobristKey pawnKey;
     CastlingRight castlingRights;
     Square epSquare;
     int halfmoveClock;
@@ -94,6 +95,7 @@ public:
     bool canCastle(CastlingRight cr) const;
     bool castlingBlocked(CastlingRight cr) const;
     ZobristKey key() const;
+    ZobristKey pawnKey() const;
     int ply() const;
 };
 
@@ -159,6 +161,10 @@ inline Square Board::epSquare() const {
 
 inline ZobristKey Board::key() const {
     return st->boardKey;
+}
+
+inline ZobristKey Board::pawnKey() const {
+    return st->pawnKey;
 }
 
 inline bool Board::isDraw() const {

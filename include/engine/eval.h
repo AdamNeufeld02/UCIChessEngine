@@ -1,6 +1,8 @@
 #pragma once
 #include <string>
+#include <cstdint>
 #include "types.h"
+#include "hashing.h"
 
 
 namespace engine {
@@ -74,7 +76,23 @@ inline int relativeRank(Colour col, int rank) {
     return col == WHITE ? rank : 7 - rank;
 }
 
-Value evaluate(Board& board);
+// Per-thread pawn hash: keyed by a joint (both colours) pawn-only Zobrist
+// key, independent of side to move. King squares are not part of the key -
+// shelter is revalidated lazily per colour whenever that colour's king has
+// moved off the square it was last computed for, without invalidating the
+// (more expensive) pawn structure half of the entry.
+constexpr size_t PAWN_TABLE_SIZE = 1 << 15;
+
+struct PawnEntry {
+    ZobristKey key = 0;
+    Score pawnScore[COLOURNB];
+    Score shelterScore[COLOURNB];
+    Square kingSquare[COLOURNB] = {NOSQUARE, NOSQUARE};
+    uint8_t pad[64 - (sizeof(ZobristKey) + 2 * sizeof(Score) * COLOURNB + sizeof(Square) * COLOURNB)];
+};
+static_assert(sizeof(PawnEntry) == 64);
+
+Value evaluate(Board& board, PawnEntry* pawnTable);
 template<Colour col>
 Score evaluatePawnStructure(Board& board);
 template<Colour col>
