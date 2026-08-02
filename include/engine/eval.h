@@ -51,6 +51,11 @@ struct Weights {
     Score bishopMobility[14];
     Score rookMobility[15];
     Score queenMobility[28];
+    Score rookOpenFile[2][2];
+
+    // Misc
+    Score bishopPair;
+    Score tempo;
 };
 
 extern Weights W;

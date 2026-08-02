@@ -236,6 +236,11 @@ static const Score kingOpenFile[2][2] = {
     { Score{-10, 0}, Score{-18, 0} }
 };
 
+static const Score rookOpenFile[2][2] = {
+    { Score{ 0, 0}, Score{ 0, 0} },
+    { Score{10, 5}, Score{20,10} }
+};
+
 Score knightMobility[9] = {
     Score{-8, -4},
     Score{-4, -2},
@@ -400,6 +405,14 @@ void init_eval_weights_default() {
     W.kingOpenFile[1][0] = kingOpenFile[1][0];
     W.kingOpenFile[1][1] = kingOpenFile[1][1];
 
+    W.rookOpenFile[0][0] = rookOpenFile[0][0];
+    W.rookOpenFile[0][1] = rookOpenFile[0][1];
+    W.rookOpenFile[1][0] = rookOpenFile[1][0];
+    W.rookOpenFile[1][1] = rookOpenFile[1][1];
+
+    W.bishopPair = Score{25, 35};
+    W.tempo      = Score{20, 10};
+
     for (int i = 0; i < 9; i++) {
         W.knightMobility[i] = knightMobility[i];
     }
@@ -443,8 +456,8 @@ Value evaluate(Board& board) {
     
     int mgPhase = gamePhase > 24 ? 24 : gamePhase;
     int egPhase = 24 - mgPhase;
-    return ((matScore.mg + psqtScore.mg + pawnStruct.mg + kingShelter.mg + pieceActivity.mg) * mgPhase + 
-            (matScore.eg + psqtScore.eg + pawnStruct.eg + kingShelter.eg + pieceActivity.eg) * egPhase) / 24;
+    return ((matScore.mg + psqtScore.mg + pawnStruct.mg + kingShelter.mg + pieceActivity.mg + W.tempo.mg) * mgPhase +
+            (matScore.eg + psqtScore.eg + pawnStruct.eg + kingShelter.eg + pieceActivity.eg + W.tempo.eg) * egPhase) / 24;
 }
 
 template<Colour col>
@@ -554,6 +567,9 @@ Score evaluatePieceActivity(Board& board) {
     }
 
     bb = board.pieces(col, BISHOP);
+    if (popcount(bb) >= 2) {
+        score += W.bishopPair;
+    }
     while (bb) {
         attacks = genAttacksBB<BISHOP>(pop_lsb(bb), occ);
         score += W.bishopMobility[popcount(attacks & open)];
@@ -562,8 +578,10 @@ Score evaluatePieceActivity(Board& board) {
 
     bb = board.pieces(col, ROOK);
     while (bb) {
-        attacks = genAttacksBB<ROOK>(pop_lsb(bb), occ);
+        Square sq = pop_lsb(bb);
+        attacks = genAttacksBB<ROOK>(sq, occ);
         score += W.rookMobility[popcount(attacks & open)];
+        score += W.rookOpenFile[board.onOpenFile(col, sq)][board.onOpenFile(~col, sq)];
         weightedAttackCount += popcount(attacks & kingZone) * attackerWeight[ROOK];
     }
 

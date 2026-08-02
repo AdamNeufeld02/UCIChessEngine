@@ -315,6 +315,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     Value currValue = 0;
     (ss+1)->pv = pv;
 
+    // Null Move Pruning
     if (!pvNode && ((ss-1)->current != NOMOVE) && staticEval >= beta && !board.checkers() && board.nonPawnMaterial(board.sideToMove()) && depth >= 3){
         ss->current = NOMOVE;
         int R = 2 + depth/4;
