@@ -115,6 +115,11 @@ void Worker::iterativeDeepening() {
         bestPv[i] = NOMOVE;
     }
 
+    MoveList<GEN_LEGAL> rootMoves(rootBoard);
+    if (rootMoves.size() > 0) {
+        bestPv[0] = rootMoves.begin()->move;
+    }
+
     Value alpha = NOVALUE;
 
     for (int depth = 1; depth < MAXPLY; depth++) {
@@ -150,7 +155,7 @@ void Worker::iterativeDeepening() {
             if (bestScore > 0) {
                 si.score = (VALUEMATE - bestScore + 1) / 2;
             } else {
-                si.score = (VALUEMATE + bestScore + 1) / 2;
+                si.score = -((VALUEMATE + bestScore + 1) / 2);
             }
 
         } else {
@@ -258,7 +263,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     }
 
     if (board.isDraw() || board.isRepetitionDraw()) return VALUEDRAW;
-
     alpha = std::max(alpha, -VALUEMATE + ss->ply);
     beta = std::min(beta, VALUEMATE - ss->ply - 1);
     if (alpha >= beta) return alpha;

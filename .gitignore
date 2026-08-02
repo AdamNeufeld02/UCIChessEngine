@@ -1,4 +1,5 @@
 /build
+.venv/
 
 # Testing workflow: downloaded tools/books and generated artifacts.
 # The scripts that manage these are still tracked.
