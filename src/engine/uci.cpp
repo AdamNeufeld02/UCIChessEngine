@@ -2,6 +2,8 @@
 #include "engine/bitboards.h"
 #include "engine/eval.h"
 #include "engine/search.h"
+#include "engine/default_weights_path.h"
+#include "engine/exe_path.h"
 
 #include <iostream>
 #include <sstream>
@@ -15,6 +17,16 @@ UCIEngine::UCIEngine() {
     zobrist::initZobrist();
     bb::init();
     init_eval_weights_default();
+
+    if (DEFAULT_WEIGHTS_FILE[0] != '\0') {
+        std::string path = findNearExecutable(DEFAULT_WEIGHTS_FILE).string();
+        if (load_eval_weights_from_file(path)) {
+            std::cerr << "info string loaded default weights from " << path << "\n";
+        } else {
+            std::cerr << "info string could not load default weights file '" << path
+                       << "', using hand-set defaults\n";
+        }
+    }
 
     engine.setBestMoveCallback(
         [this](Move best, int score, int depth, Move* pv) {
@@ -76,6 +88,7 @@ void UCIEngine::cmdUci() {
 
     std::cout << "option name Hash type spin default 64 min 1 max 1024\n";
     std::cout << "option name Threads type spin default 16 min 1 max 256\n";
+    std::cout << "option name EvalFile type string default <empty>\n";
 
     std::cout << "uciok\n";
     std::cout.flush();
@@ -217,6 +230,13 @@ void UCIEngine::cmdSetOption(std::istringstream& iss) {
             engine.setThreads(static_cast<size_t>(n));
         } catch (...) {
             // ignore invalid values
+        }
+    }
+
+    else if (name == "EvalFile") {
+        if (value.empty() || value == "<empty>") return;
+        if (!load_eval_weights_from_file(value)) {
+            std::cerr << "info string EvalFile: failed to load '" << value << "', keeping current weights\n";
         }
     }
 }

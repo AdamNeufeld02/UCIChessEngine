@@ -1,9 +1,11 @@
 #include "engine/eval.h"
 #include "engine/board.h"
+#include <fstream>
+#include <sstream>
+#include <unordered_map>
+#include <iostream>
 
 namespace engine {
-
-int attackerWeight[8] = {0, 1, 2, 2, 3, 6, 0};
 
 // ---------- Pesto base arrays ----------
 
@@ -142,6 +144,8 @@ static const int egKingTable[SQUARECOUNT] = {
     -27, -11,   4,  13,  14,   4,  -5, -17,
     -53, -34, -21, -11, -28, -14, -24, -43
 };
+
+static const int attackerWeight[8] = {0, 1, 2, 2, 3, 6, 0};
 
 static const Score safetyTable[100] = {
     Score(0, 0),  Score(0, 0),   Score(1, 1),   Score(2, 2),   Score(3, 3),
@@ -405,6 +409,14 @@ void init_eval_weights_default() {
     W.kingOpenFile[1][0] = kingOpenFile[1][0];
     W.kingOpenFile[1][1] = kingOpenFile[1][1];
 
+    for (int i = 0; i < 8; i++) {
+        W.attackerWeight[i] = attackerWeight[i];
+    }
+
+    for (int i = 0; i < 100; i++) {
+        W.safetyTable[i] = safetyTable[i];
+    }
+
     W.rookOpenFile[0][0] = rookOpenFile[0][0];
     W.rookOpenFile[0][1] = rookOpenFile[0][1];
     W.rookOpenFile[1][0] = rookOpenFile[1][0];
@@ -430,10 +442,150 @@ void init_eval_weights_default() {
     }
 }
 
-// Stub for future Texel loading
+static const char* pieceTypeShortName(int pt) {
+    switch (pt) {
+        case NONE:   return "NONE";
+        case PAWN:   return "PAWN";
+        case KNIGHT: return "KNIGHT";
+        case BISHOP: return "BISHOP";
+        case ROOK:   return "ROOK";
+        case QUEEN:  return "QUEEN";
+        case KING:   return "KING";
+        default:     return "SPARE";
+    }
+}
+
+static std::string squareName(int sq) {
+    std::string s;
+    s += char('a' + (sq & 7));
+    s += char('1' + (sq >> 3));
+    return s;
+}
+
+std::vector<TunableParam> enumerateTunableParams(Weights& w) {
+    std::vector<TunableParam> params;
+    params.reserve(1500);
+
+    auto addScore = [&](const std::string& name, Score& s) {
+        params.push_back({name + ".mg", &s.mg});
+        params.push_back({name + ".eg", &s.eg});
+    };
+    auto addInt = [&](const std::string& name, int& v) {
+        params.push_back({name, &v});
+    };
+
+    for (int pt = 0; pt < PIECETYPECOUNT; ++pt) {
+        addScore(std::string("material.") + pieceTypeShortName(pt), w.material[pt]);
+    }
+
+    for (int pt = 0; pt < PIECETYPECOUNT; ++pt) {
+        for (int sq = 0; sq < SQUARECOUNT; ++sq) {
+            addScore(std::string("psqt.") + pieceTypeShortName(pt) + "." + squareName(sq), w.psqt[pt][sq]);
+        }
+    }
+
+    for (int r = 0; r < 8; ++r) addScore("passedPawn.rank" + std::to_string(r), w.passedPawn[r]);
+    for (int r = 0; r < 8; ++r) addScore("connectedPawn.rank" + std::to_string(r), w.connectedPawn[r]);
+
+    addScore("isolatedPawn", w.isolatedPawn);
+    addScore("doubledPawn", w.doubledPawn);
+    addScore("backwardPawn", w.backwardPawn);
+    addScore("hangingPawn", w.hangingPawn);
+    addScore("supportedPawn", w.supportedPawn);
+
+    for (int f = 0; f < 4; ++f)
+        for (int r = 0; r < 8; ++r)
+            addScore("shelter.file" + std::to_string(f) + ".rank" + std::to_string(r), w.shelter[f][r]);
+
+    for (int r = 0; r < 8; ++r) addScore("blockedStorm.rank" + std::to_string(r), w.blockedStorm[r]);
+    for (int r = 0; r < 8; ++r) addScore("unblockedStorm.rank" + std::to_string(r), w.unblockedStorm[r]);
+
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 2; ++b)
+            addScore("kingOpenFile.own" + std::to_string(a) + ".enemy" + std::to_string(b), w.kingOpenFile[a][b]);
+
+    for (int pt = 0; pt < 8; ++pt)
+        addInt(std::string("attackerWeight.") + pieceTypeShortName(pt), w.attackerWeight[pt]);
+
+    for (int i = 0; i < 100; ++i) addScore("safetyTable[" + std::to_string(i) + "]", w.safetyTable[i]);
+
+    for (int i = 0; i < 9;  ++i) addScore("knightMobility[" + std::to_string(i) + "]", w.knightMobility[i]);
+    for (int i = 0; i < 14; ++i) addScore("bishopMobility[" + std::to_string(i) + "]", w.bishopMobility[i]);
+    for (int i = 0; i < 15; ++i) addScore("rookMobility[" + std::to_string(i) + "]", w.rookMobility[i]);
+    for (int i = 0; i < 28; ++i) addScore("queenMobility[" + std::to_string(i) + "]", w.queenMobility[i]);
+
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 2; ++b)
+            addScore("rookOpenFile.own" + std::to_string(a) + ".enemy" + std::to_string(b), w.rookOpenFile[a][b]);
+
+    addScore("bishopPair", w.bishopPair);
+    addScore("tempo", w.tempo);
+
+    return params;
+}
+
+bool save_eval_weights_to_file(const std::string& path, Weights& w) {
+    std::ofstream out(path);
+    if (!out) return false;
+
+    out << "# UCIChessEngine eval weights\n";
+    out << "# format: <name> <value>, one per line, '#' starts a comment.\n";
+    out << "# A missing/unrecognized name is skipped on load, not an error.\n";
+
+    for (const TunableParam& p : enumerateTunableParams(w)) {
+        out << p.name << " " << *p.value << "\n";
+    }
+
+    return bool(out);
+}
+
 bool load_eval_weights_from_file(const std::string& path) {
-    (void)path;
-    return false;
+    std::ifstream in(path);
+    if (!in) return false;
+
+    std::unordered_map<std::string, int*> byName;
+    for (TunableParam& p : enumerateTunableParams(W)) {
+        byName[p.name] = p.value;
+    }
+
+    std::string line;
+    int lineNo = 0;
+    int applied = 0;
+    while (std::getline(in, line)) {
+        ++lineNo;
+        size_t hash = line.find('#');
+        if (hash != std::string::npos) line = line.substr(0, hash);
+
+        std::istringstream iss(line);
+        std::string name;
+        if (!(iss >> name)) continue;
+
+        int value;
+        if (!(iss >> value)) {
+            std::cerr << "load_eval_weights_from_file: " << path << ":" << lineNo
+                      << ": missing value for '" << name << "', skipping\n";
+            continue;
+        }
+
+        auto it = byName.find(name);
+        if (it == byName.end()) {
+            std::cerr << "load_eval_weights_from_file: " << path << ":" << lineNo
+                      << ": unknown parameter '" << name << "', skipping\n";
+            continue;
+        }
+
+        *(it->second) = value;
+        ++applied;
+    }
+
+    return applied > 0;
+}
+
+thread_local std::vector<TraceEntry>* g_traceSink = nullptr;
+
+static inline void accum(Score& score, Score& term, int count) {
+    score += term * count;
+    if (g_traceSink) g_traceSink->push_back({&term, count});
 }
 
 Value evaluate(Board& board, PawnEntry* pawnTable) {
@@ -509,24 +661,24 @@ Score evaluatePawnStructure(Board& board) {
         const bool hasAdj       = adj;
 
         if (hasSupport || hasAdj) {
-            score += W.connectedPawn[relativeRank(col, rank)];
-            score += W.supportedPawn * popcount(support);
+            accum(score, W.connectedPawn[relativeRank(col, rank)], 1);
+            accum(score, W.supportedPawn, popcount(support));
         } else if (!hasNeighbors) {
-            score += W.isolatedPawn;
+            accum(score, W.isolatedPawn, 1);
         }
 
         if (!ahead && !opposing) {
-            score += W.passedPawn[relativeRank(col, rank)];
+            accum(score, W.passedPawn[relativeRank(col, rank)], 1);
         } else if (ahead) {
-            score += W.doubledPawn;
+            accum(score, W.doubledPawn, 1);
         }
 
         if (hasNeighbors && !hasSupport) {
-            score += W.backwardPawn;
+            accum(score, W.backwardPawn, 1);
         }
 
         if (!hasSupport && !hasAdj) {
-            score += W.hangingPawn;
+            accum(score, W.hangingPawn, 1);
         }
     }
     return score;
@@ -546,20 +698,20 @@ Score evaluateKingShelter(Board& board) {
         Bitboard immediate = friendlyPawns & aheadMask[col][kingRank * 8 + f];
         int ourRank = immediate ? relativeRank(col, getRearMost(col, immediate) / 8) : 0;
         int distToSide = std::min(f, 7-f);
-        score += W.shelter[distToSide][ourRank];
+        accum(score, W.shelter[distToSide][ourRank], 1);
 
-        immediate = enemyPawns & aheadMask[col][kingRank * 8 + f]; 
+        immediate = enemyPawns & aheadMask[col][kingRank * 8 + f];
         int theirRank = immediate ? relativeRank(col, getFrontMost(~col, immediate) / 8) : 0;
         int rankDist = theirRank ? theirRank - relativeRank(col, kingRank) : 0;
-        
+
         if (ourRank != 0 && ourRank == theirRank - 1) {
-            score += W.blockedStorm[rankDist];
+            accum(score, W.blockedStorm[rankDist], 1);
         } else {
-            score += W.unblockedStorm[rankDist];
+            accum(score, W.unblockedStorm[rankDist], 1);
         }
     }
 
-    score += W.kingOpenFile[board.onOpenFile(col, ksq)][board.onOpenFile(~col, ksq)];
+    accum(score, W.kingOpenFile[board.onOpenFile(col, ksq)][board.onOpenFile(~col, ksq)], 1);
 
     return score;
 }
@@ -582,37 +734,42 @@ Score evaluatePieceActivity(Board& board) {
 
     while (bb) {
         attacks = genAttacksBB<KNIGHT>(pop_lsb(bb), occ);
-        score += W.knightMobility[popcount(attacks & open)];
-        weightedAttackCount += popcount(attacks & kingZone) * attackerWeight[KNIGHT];
+        accum(score, W.knightMobility[popcount(attacks & open)], 1);
+        weightedAttackCount += popcount(attacks & kingZone) * W.attackerWeight[KNIGHT];
     }
 
     bb = board.pieces(col, BISHOP);
     if (popcount(bb) >= 2) {
-        score += W.bishopPair;
+        accum(score, W.bishopPair, 1);
     }
     while (bb) {
         attacks = genAttacksBB<BISHOP>(pop_lsb(bb), occ);
-        score += W.bishopMobility[popcount(attacks & open)];
-        weightedAttackCount += popcount(attacks & kingZone) * attackerWeight[BISHOP];
+        accum(score, W.bishopMobility[popcount(attacks & open)], 1);
+        weightedAttackCount += popcount(attacks & kingZone) * W.attackerWeight[BISHOP];
     }
 
     bb = board.pieces(col, ROOK);
     while (bb) {
         Square sq = pop_lsb(bb);
         attacks = genAttacksBB<ROOK>(sq, occ);
-        score += W.rookMobility[popcount(attacks & open)];
-        score += W.rookOpenFile[board.onOpenFile(col, sq)][board.onOpenFile(~col, sq)];
-        weightedAttackCount += popcount(attacks & kingZone) * attackerWeight[ROOK];
+        accum(score, W.rookMobility[popcount(attacks & open)], 1);
+        accum(score, W.rookOpenFile[board.onOpenFile(col, sq)][board.onOpenFile(~col, sq)], 1);
+        weightedAttackCount += popcount(attacks & kingZone) * W.attackerWeight[ROOK];
     }
 
     bb = board.pieces(col, QUEEN);
     while (bb) {
         attacks = genAttacksBB<QUEEN>(pop_lsb(bb), occ);
-        score += W.queenMobility[popcount(attacks & open)];
-        weightedAttackCount += popcount(attacks & kingZone) * attackerWeight[QUEEN];
+        accum(score, W.queenMobility[popcount(attacks & open)], 1);
+        weightedAttackCount += popcount(attacks & kingZone) * W.attackerWeight[QUEEN];
     }
 
-    return score + safetyTable[weightedAttackCount];
+    // attackerWeight itself is never traced/gradient-tuned: it's used above
+    // purely to select which safetyTable index fires, a discrete/nonlinear
+    // role incompatible with the linear-in-weights gradient this tuner
+    // assumes. safetyTable's selected entry is a normal linear term.
+    accum(score, W.safetyTable[weightedAttackCount], 1);
+    return score;
 }
 
 }

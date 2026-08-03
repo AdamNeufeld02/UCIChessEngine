@@ -12,6 +12,10 @@
 #include <cmath>
 #include <limits>
 #include <cstdint>
+#include <filesystem>
+#include <unordered_map>
+#include <fstream>
+#include <cstdio>
 
 
 namespace tests {
@@ -2079,6 +2083,144 @@ void runPawnHashCacheTests() {
                                 : "pawn hash cache tests FAILED.\n");
 }
 
+void runGivesCheckTests() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running givesCheck() tests...\n";
+
+    // Regression test for a bug where checkSquares[PAWN] was computed as
+    // pawnAttacks[ksq][~sideToMove()] instead of pawnAttacks[~sideToMove()][ksq]
+    // (pawnAttacks is [COLOURNB][SQUARECOUNT] - the indices were transposed,
+    // an out-of-bounds read for any ksq > 1). Confirmed via updateChecksAndPins.
+
+    // 1) A pawn push that lands on a square attacking the enemy king gives check.
+    {
+        Board b;
+        State root{};
+        b.fenToBoard("8/8/8/4k3/8/3P4/8/K7 w - - 0 1", &root);
+        Move m = makeMoveBasic(D3, D4);
+        expectEq(b.givesCheck(m), true, "pawn push to d4 gives check to king on e5");
+    }
+
+    // 2) Same pawn push, king elsewhere - must not give check.
+    {
+        Board b;
+        State root{};
+        b.fenToBoard("7k/8/8/8/8/3P4/8/K7 w - - 0 1", &root);
+        Move m = makeMoveBasic(D3, D4);
+        expectEq(b.givesCheck(m), false, "pawn push to d4 does not give check to king on h8");
+    }
+
+    // 3) Same shape for black, to exercise the other colour index.
+    {
+        Board b;
+        State root{};
+        b.fenToBoard("k7/3p4/8/4K3/8/8/8/8 b - - 0 1", &root);
+        Move m = makeMoveBasic(D7, D6);
+        expectEq(b.givesCheck(m), true, "black pawn push to d6 gives check to king on e5");
+    }
+
+    std::cout << (failures == 0 ? "All givesCheck tests passed.\n"
+                                : "givesCheck tests FAILED.\n");
+}
+
+void runEvalWeightsFileTests() {
+    using namespace engine;
+
+    failures = 0;
+    std::cout << "Running eval weights file save/load tests...\n";
+
+    // 1) enumerateTunableParams: every entry has a distinct name and a
+    // non-null pointer, and the count is sane (mg+eg per Score field plus
+    // one entry per attackerWeight int).
+    {
+        auto params = enumerateTunableParams(W);
+        expectTrue(params.size() > 1000, "enumerateTunableParams: parameter count looks sane (>1000)");
+
+        std::unordered_map<std::string, int> seen;
+        bool allNonNull = true;
+        for (auto& p : params) {
+            seen[p.name]++;
+            if (!p.value) allNonNull = false;
+        }
+        expectTrue(allNonNull, "enumerateTunableParams: every parameter has a non-null pointer");
+
+        bool noDuplicates = true;
+        for (auto& [name, count] : seen) {
+            if (count != 1) { noDuplicates = false; break; }
+        }
+        expectTrue(noDuplicates, "enumerateTunableParams: no duplicate parameter names");
+    }
+
+    // 2) Save -> mutate -> load round trip: loading must restore the saved value.
+    {
+        std::filesystem::path tmp = std::filesystem::temp_directory_path() / "uci_engine_test_weights.txt";
+
+        Value savedIsolatedMg = W.isolatedPawn.mg;
+        Value savedTempoEg = W.tempo.eg;
+
+        expectTrue(save_eval_weights_to_file(tmp.string(), W), "save_eval_weights_to_file succeeds");
+
+        W.isolatedPawn.mg = -99999;
+        W.tempo.eg = 12345;
+
+        expectTrue(load_eval_weights_from_file(tmp.string()), "load_eval_weights_from_file succeeds");
+        expectEqInt(W.isolatedPawn.mg, savedIsolatedMg, "round-trip restores isolatedPawn.mg");
+        expectEqInt(W.tempo.eg, savedTempoEg, "round-trip restores tempo.eg");
+
+        std::filesystem::remove(tmp);
+    }
+
+    // 3) A partial file only overwrites the names it mentions, leaving
+    // everything else untouched.
+    {
+        std::filesystem::path tmp = std::filesystem::temp_directory_path() / "uci_engine_test_partial_weights.txt";
+
+        Value untouchedBefore = W.doubledPawn.mg;
+        {
+            std::ofstream out(tmp);
+            out << "# partial file, only one param\n";
+            out << "isolatedPawn.mg -7\n";
+        }
+
+        expectTrue(load_eval_weights_from_file(tmp.string()), "partial load succeeds");
+        expectEqInt(W.isolatedPawn.mg, -7, "partial load applies the one named param");
+        expectEqInt(W.doubledPawn.mg, untouchedBefore, "partial load leaves unmentioned params untouched");
+
+        std::filesystem::remove(tmp);
+    }
+
+    // 4) Unknown names and malformed lines are skipped, not fatal, as long
+    // as at least one real param is present.
+    {
+        std::filesystem::path tmp = std::filesystem::temp_directory_path() / "uci_engine_test_garbage_weights.txt";
+        {
+            std::ofstream out(tmp);
+            out << "notARealParam.mg 5\n";
+            out << "malformed line with no numeric value\n";
+            out << "tempo.mg 25\n";
+        }
+
+        expectTrue(load_eval_weights_from_file(tmp.string()), "load with some garbage lines still succeeds");
+        expectEqInt(W.tempo.mg, 25, "the one valid line in a mostly-garbage file is still applied");
+
+        std::filesystem::remove(tmp);
+    }
+
+    // 5) A nonexistent file fails cleanly.
+    {
+        expectTrue(!load_eval_weights_from_file("this_file_definitely_does_not_exist_12345.txt"),
+                   "loading a nonexistent file returns false");
+    }
+
+    // Restore known-good defaults for any tests that run after this one.
+    init_eval_weights_default();
+
+    std::cout << (failures == 0 ? "All eval weights file tests passed.\n"
+                                : "eval weights file tests FAILED.\n");
+}
+
 }
 
 namespace tests_cli{
@@ -2086,6 +2228,8 @@ namespace tests_cli{
     int run(int argc, char** argv) {
         (void)argc;
         (void)argv;
+        std::setvbuf(stdout, nullptr, _IONBF, 0);
+        std::setvbuf(stderr, nullptr, _IONBF, 0);
         engine::zobrist::initZobrist();
         engine::bb::init();
         engine::init_eval_weights_default();
@@ -2111,6 +2255,8 @@ namespace tests_cli{
         tests::runSeeThresholdTests();
         tests::runPawnKeyIncrementalTests();
         tests::runPawnHashCacheTests();
+        tests::runEvalWeightsFileTests();
+        tests::runGivesCheckTests();
         return 0;
     }
 }

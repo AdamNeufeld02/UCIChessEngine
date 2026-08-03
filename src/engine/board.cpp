@@ -380,7 +380,7 @@ void Board::updateChecksAndPins(Colour col) {
 
     Square ksq = kingSquare(~sideToMove());
 
-    st->checkSquares[PAWN] = pawnAttacks[ksq][~sideToMove()];
+    st->checkSquares[PAWN] = pawnAttacks[~sideToMove()][ksq];
     st->checkSquares[KNIGHT] = genAttacksBB<KNIGHT>(ksq, pieces());
     st->checkSquares[BISHOP] = genAttacksBB<BISHOP>(ksq, pieces());
     st->checkSquares[ROOK] = genAttacksBB<ROOK>(ksq, pieces());

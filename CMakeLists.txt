@@ -65,6 +65,7 @@ add_executable(engine_tools
     tools/verification.cpp
     tools/unit_tests.cpp
     tools/magicGen.cpp
+    tools/tune.cpp
 )
 
 target_include_directories(engine_tools

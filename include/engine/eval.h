@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <cstdint>
+#include <vector>
 #include "types.h"
 #include "hashing.h"
 
@@ -48,6 +49,10 @@ struct Weights {
     Score unblockedStorm[8];
     Score kingOpenFile[2][2];
 
+    // King safety (attacker weighting -> weighted attack count -> safety curve)
+    int attackerWeight[8];
+    Score safetyTable[100];
+
     // Mobility
     Score knightMobility[9];
     Score bishopMobility[14];
@@ -66,6 +71,30 @@ extern int gamePhaseWeightings[PIECETYPECOUNT];
 void init_eval_weights_default();
 
 bool load_eval_weights_from_file(const std::string& path);
+bool save_eval_weights_to_file(const std::string& path, Weights& w);
+
+// One named handle per tunable scalar inside a Weights instance - built by
+// walking the same field structure init_eval_weights_default() populates, so
+// the name list always matches whatever Weights actually contains. Used for
+// the semi-human-readable weights file format and by the tuner.
+struct TunableParam {
+    std::string name;
+    int* value;
+};
+std::vector<TunableParam> enumerateTunableParams(Weights& w);
+
+// Tuner-support tracing. When g_traceSink is non-null, every eval-term
+// accumulation inside evaluatePawnStructure/evaluateKingShelter/
+// evaluatePieceActivity also records which Score field fired and with what
+// signed count, alongside its normal contribution to the running Score - the
+// same code path either way, so a trace can never drift from what evaluate()
+// actually computes. Null (the default, and always the case during search)
+// costs one pointer check per accumulation and changes nothing else.
+struct TraceEntry {
+    Score* param;
+    int count;
+};
+extern thread_local std::vector<TraceEntry>* g_traceSink;
 
 inline Square mirrorSquareIfBlack(Square sq, Colour c) {
     int mask = c * 56;
