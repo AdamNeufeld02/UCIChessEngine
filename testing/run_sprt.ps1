@@ -20,6 +20,12 @@
 .EXAMPLE
     .\run_sprt.ps1 -BaselineRef main~5 -Bounds nonregression -Concurrency 8
     Test current tree vs the commit 5 back on main, non-regression bounds, 8 games at once.
+
+.EXAMPLE
+    .\run_sprt.ps1 -Resume
+    Continue a match that was interrupted (Ctrl+C, machine went to sleep, etc.)
+    from its last autosave, using the exact dev/baseline binaries and weights
+    already built rather than rebuilding and losing the games played so far.
 #>
 
 param(
@@ -32,7 +38,8 @@ param(
     [int]$Concurrency = 0,
     [int]$Rounds = 20000,
     [int]$Hash = 16,
-    [string]$Book = "$PSScriptRoot\books\8moves_v3.pgn"
+    [string]$Book = "$PSScriptRoot\books\8moves_v3.pgn",
+    [switch]$Resume
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,12 +51,33 @@ $ResultsDir = "$PSScriptRoot\results"
 $WorktreeDir = "$PSScriptRoot\.worktree\baseline"
 $DevBuildDir = "$PSScriptRoot\build\dev"
 $BaseBuildDir = "$PSScriptRoot\build\baseline"
+# Fixed, CWD-independent location so a later -Resume can always find it,
+# regardless of what directory the script happened to be invoked from -
+# fastchess's own default ("config.json") is relative to CWD at launch, which
+# isn't reliable (same reasoning as findNearExecutable in exe_path.h).
+$ConfigPath = "$PSScriptRoot\config.json"
 
 New-Item -ItemType Directory -Force -Path $EnginesDir, $ResultsDir | Out-Null
 
 if (-not (Test-Path $FastChess)) {
     throw "fastchess.exe not found at $FastChess. See testing/README.md to (re)download it."
 }
+
+if ($Resume) {
+    # Deliberately skips every build/worktree step: resuming should continue
+    # the EXACT match that was interrupted (same dev/baseline binaries, same
+    # weights files, same pairings/results) rather than risk silently
+    # rebuilding from a working tree that may have changed since the match
+    # started, which would make the "continued" data no longer comparable to
+    # the games already played.
+    if (-not (Test-Path $ConfigPath)) {
+        throw "No saved match state at $ConfigPath - nothing to resume. Run without -Resume to start a new match."
+    }
+    Write-Host "==> Resuming SPRT from $ConfigPath" -ForegroundColor Green
+    & $FastChess -config file="$ConfigPath"
+    exit $LASTEXITCODE
+}
+
 if (-not (Test-Path $Book)) {
     throw "Opening book not found at $Book. See testing/README.md to (re)download it."
 }
@@ -107,6 +135,25 @@ function Wait-ExeReady {
     }
 }
 
+function Get-DefaultWeightsFile {
+    # Resolves the eval weights file a given source tree's engine would load
+    # by default (per include/engine/default_weights_path.h's
+    # DEFAULT_WEIGHTS_FILE constant), reading it directly from that tree
+    # rather than assuming a fixed filename - so this stays correct even if a
+    # baseline ref used a different constant value. Returns $null if there's
+    # no tuned weights file for this tree (hand-set defaults only).
+    param([string]$SourceDir)
+    $headerPath = Join-Path $SourceDir "include\engine\default_weights_path.h"
+    if (-not (Test-Path $headerPath)) { return $null }
+    $content = Get-Content $headerPath -Raw
+    if ($content -notmatch 'DEFAULT_WEIGHTS_FILE\s*=\s*"([^"]*)"') { return $null }
+    $fileName = $Matches[1]
+    if ([string]::IsNullOrEmpty($fileName)) { return $null }
+    $weightsPath = Join-Path $SourceDir "data\$fileName"
+    if (-not (Test-Path $weightsPath)) { return $null }
+    return $weightsPath
+}
+
 function Build-Engine {
     param([string]$SourceDir, [string]$BuildDir, [string]$Label)
 
@@ -130,6 +177,21 @@ $devExe = "$EnginesDir\dev.exe"
 Copy-Item $devExeSrc $devExe -Force
 Wait-ExeReady -ExePath $devExe
 
+# Resolve + copy out dev's own eval weights now, from the working tree, and
+# pass it to fastchess explicitly via EvalFile below - NOT via the engine's
+# built-in auto-discovery. Auto-discovery (findNearExecutable) walks up from
+# wherever the exe is COPIED to (testing\engines\), which has no data/ folder
+# of its own, so it walks all the way up to $RepoRoot\data - the SAME folder
+# both dev's and baseline's copied exes would resolve to. Relying on it here
+# would silently make both engines load whatever's currently sitting in
+# $RepoRoot\data, regardless of which git ref each was actually built from.
+$devWeightsSrc = Get-DefaultWeightsFile $RepoRoot
+$devWeights = $null
+if ($devWeightsSrc) {
+    $devWeights = "$EnginesDir\dev.weights.txt"
+    Copy-Item $devWeightsSrc $devWeights -Force
+}
+
 # --- Build "baseline" from the requested git ref, via a throwaway worktree ---
 if (Test-Path $WorktreeDir) {
     git -C $RepoRoot worktree remove --force $WorktreeDir 2>$null
@@ -138,14 +200,26 @@ if (Test-Path $WorktreeDir) {
 git -C $RepoRoot worktree add --detach $WorktreeDir $BaselineRef | Write-Host
 if ($LASTEXITCODE -ne 0) { throw "git worktree add failed for ref '$BaselineRef'" }
 
+$baseWeights = $null
 try {
     $baseExeSrc = Build-Engine -SourceDir $WorktreeDir -BuildDir $BaseBuildDir -Label "baseline ($BaselineRef)"
     $baseExe = "$EnginesDir\baseline.exe"
     Copy-Item $baseExeSrc $baseExe -Force
     Wait-ExeReady -ExePath $baseExe
+
+    # Must copy the weights file out of the worktree now - it gets deleted in
+    # the `finally` below, before fastchess ever runs.
+    $baseWeightsSrc = Get-DefaultWeightsFile $WorktreeDir
+    if ($baseWeightsSrc) {
+        $baseWeights = "$EnginesDir\baseline.weights.txt"
+        Copy-Item $baseWeightsSrc $baseWeights -Force
+    }
 } finally {
     git -C $RepoRoot worktree remove --force $WorktreeDir 2>$null
 }
+
+Write-Host "==> dev weights:      $(if ($devWeights) { $devWeights } else { '<hand-set defaults only - no tuned weights file found>' })"
+Write-Host "==> baseline weights: $(if ($baseWeights) { $baseWeights } else { '<hand-set defaults only - no tuned weights file found>' })"
 
 # --- Run the SPRT match ---
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -155,9 +229,15 @@ $logOut = "$ResultsDir\fastchess_$stamp.log"
 Write-Host "==> Running SPRT: dev vs baseline ($BaselineRef)" -ForegroundColor Green
 Write-Host "    TC=$TC  concurrency=$Concurrency  bounds=[$Elo0, $Elo1]  book=$Book"
 
+$devEngineArgs = @("cmd=$devExe", "name=dev")
+if ($devWeights) { $devEngineArgs += "option.EvalFile=$devWeights" }
+
+$baseEngineArgs = @("cmd=$baseExe", "name=baseline")
+if ($baseWeights) { $baseEngineArgs += "option.EvalFile=$baseWeights" }
+
 & $FastChess `
-    -engine cmd="$devExe" name=dev `
-    -engine cmd="$baseExe" name=baseline `
+    -engine @devEngineArgs `
+    -engine @baseEngineArgs `
     -each tc=$TC option.Threads=1 option.Hash=$Hash `
     -rounds $Rounds -games 2 -repeat `
     -concurrency $Concurrency `
@@ -166,7 +246,8 @@ Write-Host "    TC=$TC  concurrency=$Concurrency  bounds=[$Elo0, $Elo1]  book=$B
     -draw movenumber=40 movecount=8 score=8 `
     -resign movecount=3 score=400 `
     -pgnout file="$pgnOut" `
-    -log file="$logOut"
+    -log file="$logOut" `
+    -config outname="$ConfigPath"
 
 Write-Host "==> PGN:  $pgnOut"
 Write-Host "==> Log:  $logOut"

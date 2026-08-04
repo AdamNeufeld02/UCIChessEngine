@@ -56,6 +56,12 @@ struct Options {
     double holdoutFrac = 0.2; // used for early-stopping decisions during training
     double testFrac = 0.1;    // untouched until the very end - the honest final number
     double lr = 0.05; // Adam step size - not comparable to a plain-SGD lr
+    // Decoupled (AdamW-style) weight decay pulling each parameter toward its
+    // OWN starting value (hand-set defaults, or --weights if given) rather
+    // than toward zero - see the comment at the decay application site in
+    // train() for why toward-prior beats toward-zero for a param set this
+    // sparse (PSQT alone is ~450 of ~700 tunable Score pairs).
+    double l2 = 0.0008;
     int batchSize = 256;
     int maxEpochs = 200;
     int patience = 15;
@@ -80,6 +86,7 @@ static bool parseArgs(int argc, char** argv, Options& opt, bool& datasetExplicit
         else if (auto v = next("--holdout")) opt.holdoutFrac = std::stod(*v);
         else if (auto v = next("--test")) opt.testFrac = std::stod(*v);
         else if (auto v = next("--lr")) opt.lr = std::stod(*v);
+        else if (auto v = next("--l2")) opt.l2 = std::stod(*v);
         else if (auto v = next("--batch")) opt.batchSize = std::stoi(*v);
         else if (auto v = next("--epochs")) opt.maxEpochs = std::stoi(*v);
         else if (auto v = next("--patience")) opt.patience = std::stoi(*v);
@@ -109,6 +116,13 @@ static void printUsage() {
         "                       decision during training, unlike --holdout\n"
         "  --lr RATE            Adam step size (default: 0.05) - per-parameter adaptive,\n"
         "                       not directly comparable to a plain-SGD learning rate\n"
+        "  --l2 LAMBDA          decoupled (AdamW-style) weight decay pulling each parameter\n"
+        "                       toward its OWN starting value, not toward zero (default:\n"
+        "                       0.0008). Applied outside Adam's gradient/moment estimates so\n"
+        "                       sparsely-observed params (most PSQT squares, deep safetyTable\n"
+        "                       entries) decay gently toward their prior instead of Adam's\n"
+        "                       1/sqrt(v) adaptive scaling amplifying noise into them. Set 0\n"
+        "                       to disable.\n"
         "  --batch N            mini-batch size (default: 256)\n"
         "  --epochs N           max epochs (default: 200)\n"
         "  --patience N         early-stop patience, in holdout checks (default: 15)\n"
@@ -573,6 +587,8 @@ static void train(const Options& opt, Dataset& ds) {
 
     double K = opt.kOverride > 0 ? opt.kOverride : calibrateK(ds, trainIdx, mg, eg);
     std::cout << "tune: K = " << K << (opt.kOverride > 0 ? " (override)\n" : " (calibrated)\n");
+    std::cout << "tune: L2 anchor-decay lambda = " << opt.l2
+              << (opt.l2 > 0 ? " (decoupled, toward starting weights)\n" : " (disabled)\n");
 
     double initialHoldout = meanLoss(ds, holdoutIdx, mg, eg, K);
     double initialTest = meanLoss(ds, testIdx, mg, eg, K);
@@ -619,14 +635,24 @@ static void train(const Options& opt, Dataset& ds) {
                 vMomentMg[i] = beta2 * vMomentMg[i] + (1.0 - beta2) * gMg * gMg;
                 double mHatMg = mMomentMg[i] / biasCorr1;
                 double vHatMg = vMomentMg[i] / biasCorr2;
-                mg[i] -= opt.lr * mHatMg / (std::sqrt(vHatMg) + adamEps);
+                // Decoupled (AdamW-style) weight decay: pulls each parameter
+                // toward its OWN starting value (startMg/startEg - hand-set
+                // defaults, or a --weights checkpoint), not toward zero, and
+                // computed from mg[i]/eg[i] BEFORE the Adam step so it's an
+                // independent term added to the same update rather than
+                // folded into the gradient Adam normalizes by. Folding it in
+                // would let Adam's 1/sqrt(v) scaling amplify the decay for
+                // params with rare/noisy data gradients (most PSQT squares,
+                // deep safetyTable entries) - exactly backwards, since those
+                // are the params that most need to stay near their prior.
+                mg[i] -= opt.lr * (mHatMg / (std::sqrt(vHatMg) + adamEps) + opt.l2 * (mg[i] - startMg[i]));
 
                 double gEg = gradEg[i] / static_cast<double>(n);
                 mMomentEg[i] = beta1 * mMomentEg[i] + (1.0 - beta1) * gEg;
                 vMomentEg[i] = beta2 * vMomentEg[i] + (1.0 - beta2) * gEg * gEg;
                 double mHatEg = mMomentEg[i] / biasCorr1;
                 double vHatEg = vMomentEg[i] / biasCorr2;
-                eg[i] -= opt.lr * mHatEg / (std::sqrt(vHatEg) + adamEps);
+                eg[i] -= opt.lr * (mHatEg / (std::sqrt(vHatEg) + adamEps) + opt.l2 * (eg[i] - startEg[i]));
             }
 
             if (++batchesSinceCheck >= opt.checkIntervalBatches) {
