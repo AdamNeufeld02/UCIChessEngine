@@ -355,13 +355,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         bool givesCheck = board.givesCheck(move);
         int extension = givesCheck ? 1 : 0;
 
-        // Late move pruning: this deep into the (history-ordered) quiet
-        // move list without an improvement, later quiets are only ever less
-        // promising - skip searching their subtree entirely instead of
-        // paying for it move by move. Complements futility pruning below
-        // (which is margin-based and only fires at depth<=2) by extending
-        // the "stop looking at late quiets" idea out to depth<=8, where a
-        // static-eval margin check alone gets too unreliable to trust.
+        // Late move pruning
         if (!pvNode && !board.checkers() && depth <= 8 && isQuiet && !givesCheck && movesSearched >= lmpThreshold(depth)) {
             continue;
         }

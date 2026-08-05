@@ -45,7 +45,13 @@ void Engine::calculateLimits(SearchLimits& limits) {
 
     myTime = std::max(myTime, 1);
 
-    uint64_t T_move = static_cast<uint64_t>(myTime / 20) + static_cast<uint64_t>(myInc / 2);
+    uint64_t T_move;
+    if (limits.movestogo > 0) {
+        int movesToGo = limits.movestogo;
+        T_move = static_cast<uint64_t>(myTime / (movesToGo + 1)) + static_cast<uint64_t>(myInc / 2);
+    } else {
+        T_move = static_cast<uint64_t>(myTime / 20) + static_cast<uint64_t>(myInc / 2);
+    }
     T_move = std::max<uint64_t>(T_move, 1);
     limits.softTimeLimitMs = T_move * 0.9;
     limits.hardTimeLimitMs = T_move;
