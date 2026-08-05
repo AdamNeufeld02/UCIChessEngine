@@ -84,6 +84,7 @@ private:
     Value rfpMargin(int depth);
     Value razorMargin(int depth);
     Value futilityMargin(int depth);
+    int lmpThreshold(int depth);
 
     ThreadPool& threads;
     TranspositionTable& tt;
