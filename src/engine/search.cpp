@@ -263,6 +263,14 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     }
 
     if (board.isDraw() || board.isRepetitionDraw()) return VALUEDRAW;
+    // Check extension below can hold depth roughly flat across plies (a
+    // checking move nets depth-1+1 == depth), so unlike the rest of this
+    // function - where depth strictly decreases every recursive call,
+    // keeping ss->ply bounded by the root depth < MAXPLY for free - a long
+    // forced-check line could in principle walk ss->ply past the end of the
+    // MAXPLY-sized SearchStack array that qsearch() already guards for but
+    // this function never needed to before now.
+    if (ss->ply >= MAXPLY - 1) return evaluate(board, pawnTable);
     alpha = std::max(alpha, -VALUEMATE + ss->ply);
     beta = std::min(beta, VALUEMATE - ss->ply - 1);
     if (alpha >= beta) return alpha;
@@ -345,6 +353,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
         bool isQuiet = !board.captureGenType(move);
         bool givesCheck = board.givesCheck(move);
+        int extension = givesCheck ? 1 : 0;
 
         // Futility pruning
         if (!pvNode && !board.checkers() && depth <= 2 && isQuiet && !givesCheck && movesSearched > 1) {
@@ -359,7 +368,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         board.makeMove(move, &st); 
         if (movesSearched == 0) {
             (ss+1)->pv[0] = NOMOVE;
-            currValue= -search(ss+1, board, -beta, -alpha, depth-1, pvNode);
+            currValue= -search(ss+1, board, -beta, -alpha, depth-1+extension, pvNode);
         } else {
             (ss+1)->pv[0] = NOMOVE;
             int r = baseReduction(depth, movesSearched);
@@ -369,18 +378,17 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
                 r -= (historyScore - 100) / 50;
             }
             r -= pvNode;
-            r -= givesCheck;
             if (depth <= 2 || r < 0) r = 0;
-            currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1-r, false);
+            currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1+extension-r, false);
 
             if (!pvNode && currValue > alpha && r != 0) {
                 (ss+1)->pv[0] = NOMOVE;
-                currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1, false);
+                currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1+extension, false);
             }
 
             if (pvNode && currValue > alpha) {
                 (ss+1)->pv[0] = NOMOVE;
-                currValue = -search(ss+1, board, -beta, -alpha, depth-1, true);
+                currValue = -search(ss+1, board, -beta, -alpha, depth-1+extension, true);
             }
         }
         board.undoMove(move);
