@@ -32,6 +32,7 @@ struct SearchStack {
     Move current;
     PieceType movedPT;
     bool didNull;
+    Move excludedMove = NOMOVE;
 };
 
 constexpr int QSEARCHHISTORYDEPTH = 4;

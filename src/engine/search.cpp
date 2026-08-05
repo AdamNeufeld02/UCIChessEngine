@@ -8,6 +8,11 @@ static const int CHECKFREQ = 4095;
 constexpr int HIST_CAP = 8192;
 constexpr int ETA_SHIFT = 3;
 
+// Singular extensions (see the ttmove == move branch in Worker::search()).
+constexpr int SE_MIN_DEPTH = 7;         // don't bother verifying below this depth
+constexpr int SE_TT_DEPTH_MARGIN = 3;   // require a reasonably fresh/deep TT entry to trust
+constexpr int SE_MARGIN_PER_DEPTH = 2;  // singularBeta = ttValue - this * depth
+
 static inline int clampHist(int x) {
     if (x >  HIST_CAP) return  HIST_CAP;
     if (x < -HIST_CAP) return -HIST_CAP;
@@ -280,10 +285,11 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     // Probe transposition-table
     Move ttmove = NOMOVE;
     Value staticEval = NOVALUE;
+    Value ttValue = NOVALUE;
     auto [ttHit, ttData, ttWriter] = tt.probe(board.key());
     if (ttHit) {
-        if (ttData.depth >= depth && board.st->repetitionCount == 0) {
-            Value ttValue = fromTTScore(ttData.value, ss->ply);
+        ttValue = fromTTScore(ttData.value, ss->ply);
+        if (ss->excludedMove == NOMOVE && ttData.depth >= depth && board.st->repetitionCount == 0) {
             if (ttData.bound == EXACT) {
                 return ttValue;
             } else if (ttData.bound == LOWER && ttValue >= beta) {
@@ -350,10 +356,33 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
     while ((move = ms.selectMove()) != NOMOVE) {
         if (!board.legalMove(move)) continue;
+        if (move == ss->excludedMove) continue;
 
         bool isQuiet = !board.captureGenType(move);
         bool givesCheck = board.givesCheck(move);
         int extension = givesCheck ? 1 : 0;
+
+        // Singular extension
+        if (move == ttmove
+            && ss->excludedMove == NOMOVE
+            && depth >= SE_MIN_DEPTH
+            && ttData.bound != UPPER
+            && ttData.depth >= depth - SE_TT_DEPTH_MARGIN
+            && std::abs(ttValue) < VALUEMATEINMAX) {
+            Value singularBeta = ttValue - SE_MARGIN_PER_DEPTH * depth;
+            int singularDepth = (depth - 1) / 2;
+
+            Move* savedNextPv = (ss+1)->pv;
+            ss->excludedMove = ttmove;
+            Value seValue = search(ss, board, singularBeta - 1, singularBeta, singularDepth, false);
+            ss->excludedMove = NOMOVE;
+            (ss+1)->pv = savedNextPv;
+            if (threads.stop) return 0;
+
+            if (seValue < singularBeta) {
+                extension = std::max(extension, 1);
+            }
+        }
 
         // Late move pruning
         if (!pvNode && !board.checkers() && depth <= 8 && isQuiet && !givesCheck && movesSearched >= lmpThreshold(depth)) {
@@ -402,13 +431,17 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
         // fail high
         if (currValue >= beta) {
-            ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
+            if (ss->excludedMove == NOMOVE) {
+                ttWriter.write(board.key(), move, staticEval, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
+            }
             updateHistories(board, ss, searchedCaptures, searchedQuiets, move, depth + QSEARCHHISTORYDEPTH);
             if (isQuiet && killerMoves[board.ply()][0] != move) {
                 killerMoves[board.ply()][1] = killerMoves[board.ply()][0];
                 killerMoves[board.ply()][0] = move;
             }
-            updatePV(ss->pv, move, (ss+1)->pv);
+            if (ss->excludedMove == NOMOVE) {
+                updatePV(ss->pv, move, (ss+1)->pv);
+            }
             return currValue;
         }
 
@@ -417,7 +450,9 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
             topMove = move;
             if (topScore > alpha) {
                 alpha = topScore;
-                updatePV(ss->pv, move, (ss+1)->pv);
+                if (ss->excludedMove == NOMOVE) {
+                    updatePV(ss->pv, move, (ss+1)->pv);
+                }
             }
         } else if (movesSearched < SEARCHEDLISTCAP) {
             if (!isQuiet) {
@@ -437,7 +472,9 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         }
     } 
     Bound b = pvNode && topMove != NOMOVE ? EXACT : UPPER;
-    ttWriter.write(board.key(), topMove, staticEval, toTTScore(topScore, ss->ply), depth, tt.currentGeneration(), b);
+    if (ss->excludedMove == NOMOVE) {
+        ttWriter.write(board.key(), topMove, staticEval, toTTScore(topScore, ss->ply), depth, tt.currentGeneration(), b);
+    }
     updateHistories(board, ss, searchedCaptures, searchedQuiets, topMove, depth + QSEARCHHISTORYDEPTH);
     return topScore;
 }
