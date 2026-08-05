@@ -13,6 +13,11 @@ constexpr int SE_MIN_DEPTH = 7;         // don't bother verifying below this dep
 constexpr int SE_TT_DEPTH_MARGIN = 3;   // require a reasonably fresh/deep TT entry to trust
 constexpr int SE_MARGIN_PER_DEPTH = 2;  // singularBeta = ttValue - this * depth
 
+// Once a forced mate is found and hasn't gotten any faster for this many
+// consecutive iterations, iterativeDeepening() stops rather than grinding on
+// to MAXPLY (see the mate-stability check there).
+constexpr int MATE_STABLE_ITERATIONS = 4;
+
 static inline int clampHist(int x) {
     if (x >  HIST_CAP) return  HIST_CAP;
     if (x < -HIST_CAP) return -HIST_CAP;
@@ -126,6 +131,8 @@ void Worker::iterativeDeepening() {
     }
 
     Value alpha = NOVALUE;
+    int shortestMatePlies = -1;
+    int mateStableIterations = 0;
 
     for (int depth = 1; depth < MAXPLY; depth++) {
 
@@ -175,6 +182,21 @@ void Worker::iterativeDeepening() {
         if (limits.depth > 0 && limits.depth <= depth) return;
 
         if (threadID != 0 && checkSoftLimit(elapsedMs)) return;
+
+        if (!limits.infinite && limits.depth == 0) {
+            if (si.isMate) {
+                int matePlies = VALUEMATE - std::abs(bestScore);
+                if (shortestMatePlies < 0 || matePlies < shortestMatePlies) {
+                    shortestMatePlies = matePlies;
+                    mateStableIterations = 0;
+                } else if (++mateStableIterations >= MATE_STABLE_ITERATIONS) {
+                    return;
+                }
+            } else {
+                shortestMatePlies = -1;
+                mateStableIterations = 0;
+            }
+        }
     }
 }
 
@@ -213,19 +235,27 @@ Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta,
     Move pv[MAXPLY];
     (ss+1)->pv = pv;
 
+    Move ttmove = NOMOVE;
+    auto [ttHit, ttData, ttWriter] = tt.probe(board.key());
+    if (ttHit) {
+        ttmove = ttData.move;
+    }
+
     State st;
     Move move;
     Value currValue = 0;
     Value topScore = -VALUEINFINITE;
+    Move topMove = NOMOVE;
     int movesSearched = 0;
 
-    MoveSelector ms = MoveSelector(bestPv[0], board, true, ss, history, killerMoves[board.ply()]);
-    
+    Move orderingMove = (ttmove != NOMOVE) ? ttmove : bestPv[0];
+    MoveSelector ms = MoveSelector(orderingMove, board, true, ss, history, killerMoves[board.ply()]);
+
     while ((move = ms.selectMove()) != NOMOVE) {
         if (!board.legalMove(move)) continue;
         ss->current = move;
         ss->movedPT = typeOf(board.pieceOn(fromSq(move)));
-        
+
         board.makeMove(move, &st);
         if (movesSearched == 0) {
             (ss+1)->pv[0] = NOMOVE;
@@ -243,18 +273,25 @@ Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta,
         if (threads.stop) return 0;
 
         if (currValue >= beta) {
+            ttWriter.write(board.key(), move, NOVALUE, toTTScore(currValue, ss->ply), depth, tt.currentGeneration(), LOWER);
             updatePV(ss->pv, move, (ss+1)->pv);
             return currValue;
         }
 
         if (currValue > topScore) {
             topScore = currValue;
+            topMove = move;
             if (currValue > alpha) {
                 alpha = currValue;
                 updatePV(ss->pv, move, (ss+1)->pv);
             }
         }
         movesSearched++;
+    }
+
+    if (movesSearched > 0) {
+        Bound b = topMove != NOMOVE ? EXACT : UPPER;
+        ttWriter.write(board.key(), topMove, NOVALUE, toTTScore(topScore, ss->ply), depth, tt.currentGeneration(), b);
     }
     return topScore;
 }
@@ -268,13 +305,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     }
 
     if (board.isDraw() || board.isRepetitionDraw()) return VALUEDRAW;
-    // Check extension below can hold depth roughly flat across plies (a
-    // checking move nets depth-1+1 == depth), so unlike the rest of this
-    // function - where depth strictly decreases every recursive call,
-    // keeping ss->ply bounded by the root depth < MAXPLY for free - a long
-    // forced-check line could in principle walk ss->ply past the end of the
-    // MAXPLY-sized SearchStack array that qsearch() already guards for but
-    // this function never needed to before now.
     if (ss->ply >= MAXPLY - 1) return evaluate(board, pawnTable);
     alpha = std::max(alpha, -VALUEMATE + ss->ply);
     beta = std::min(beta, VALUEMATE - ss->ply - 1);
