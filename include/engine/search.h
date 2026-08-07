@@ -33,6 +33,7 @@ struct SearchStack {
     PieceType movedPT;
     bool didNull;
     Move excludedMove = NOMOVE;
+    Value staticEval = NOVALUE;
 };
 
 constexpr int QSEARCHHISTORYDEPTH = 4;
@@ -63,7 +64,7 @@ public:
     void iterativeDeepening();
     Value aspirationSearch(SearchStack* ss, Board& board, Value center, int depth);
     Value rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta, int depth);
-    Value search(SearchStack* ss, Board& board, Value alpha, Value beta, int depth, bool pvNode);
+    Value search(SearchStack* ss, Board& board, Value alpha, Value beta, int depth, bool pvNode, bool cutNode);
     Value qsearch(SearchStack* ss, Board& board, Value alpha, Value beta);
 
     History history;
@@ -82,10 +83,10 @@ private:
     void updateCaptureHistory(Board& board, Move move, int reward);
 
     int baseReduction(int depth, int moveCount);
-    Value rfpMargin(int depth);
+    Value rfpMargin(int depth, bool improving);
     Value razorMargin(int depth);
-    Value futilityMargin(int depth);
-    int lmpThreshold(int depth);
+    Value futilityMargin(int depth, bool improving);
+    int lmpThreshold(int depth, bool improving);
 
     ThreadPool& threads;
     TranspositionTable& tt;

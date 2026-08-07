@@ -18,6 +18,10 @@ constexpr int SE_MARGIN_PER_DEPTH = 2;  // singularBeta = ttValue - this * depth
 // to MAXPLY (see the mate-stability check there).
 constexpr int MATE_STABLE_ITERATIONS = 4;
 
+// "Improving" margin scaling (see the improving comment in Worker::search()).
+constexpr int RFP_IMPROVING_BONUS = 50;      // rfpMargin shrinks by this much when improving
+constexpr int FUTILITY_IMPROVING_BONUS = 50; // futilityMargin shrinks by this much when improving
+
 static inline int clampHist(int x) {
     if (x >  HIST_CAP) return  HIST_CAP;
     if (x < -HIST_CAP) return -HIST_CAP;
@@ -259,13 +263,13 @@ Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta,
         board.makeMove(move, &st);
         if (movesSearched == 0) {
             (ss+1)->pv[0] = NOMOVE;
-            currValue= -search(ss+1, board, -beta, -alpha, depth-1, true);
+            currValue= -search(ss+1, board, -beta, -alpha, depth-1, true, false);
         } else {
             (ss+1)->pv[0] = NOMOVE;
-            currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1, false);
+            currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1, false, true);
             if (currValue > alpha && currValue < beta) {
                 (ss+1)->pv[0] = NOMOVE;
-                currValue = -search(ss+1, board, -beta, -alpha, depth-1, true);
+                currValue = -search(ss+1, board, -beta, -alpha, depth-1, true, false);
             }
         }
         board.undoMove(move);
@@ -296,7 +300,7 @@ Value Worker::rootSearch(SearchStack* ss, Board& board, Value alpha, Value beta,
     return topScore;
 }
 
-Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth, bool pvNode) {
+Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int depth, bool pvNode, bool cutNode) {
     nodesSearched++;
 
     if (((nodesSearched & CHECKFREQ) == 0) && (threadID == 0) && checkMainWorker()) {
@@ -319,15 +323,6 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
     auto [ttHit, ttData, ttWriter] = tt.probe(board.key());
     if (ttHit) {
         ttValue = fromTTScore(ttData.value, ss->ply);
-        if (ss->excludedMove == NOMOVE && ttData.depth >= depth && board.st->repetitionCount == 0) {
-            if (ttData.bound == EXACT) {
-                return ttValue;
-            } else if (ttData.bound == LOWER && ttValue >= beta) {
-                return ttValue;
-            } else if (ttData.bound == UPPER && ttValue <= alpha) {
-                return ttValue;
-            }
-        }
         ttmove = ttData.move;
         staticEval = ttData.eval;
     }
@@ -336,9 +331,24 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         staticEval = evaluate(board, pawnTable);
     }
 
+    ss->staticEval = staticEval;
+
+    bool improving = ss->ply >= 2 && !board.checkers() && (ss-2)->staticEval != NOVALUE
+                      && staticEval > (ss-2)->staticEval;
+
+    if (ttHit && ss->excludedMove == NOMOVE && ttData.depth >= depth && board.st->repetitionCount == 0) {
+        if (ttData.bound == EXACT) {
+            return ttValue;
+        } else if (ttData.bound == LOWER && ttValue >= beta) {
+            return ttValue;
+        } else if (ttData.bound == UPPER && ttValue <= alpha) {
+            return ttValue;
+        }
+    }
+
     // Reverse Futility Pruning
     if (!pvNode && !board.checkers() && depth <= 7) {
-        Value margin = rfpMargin(depth);
+        Value margin = rfpMargin(depth, improving);
         if (staticEval - margin >= beta) {
             return staticEval;
         }
@@ -365,7 +375,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         int R = 2 + depth/4;
         board.makeNullMove(&st);
         (ss+1)->pv[0] = NOMOVE;
-        Value nullValue = -search(ss+1, board, -beta, -beta+1, depth-R, false);
+        Value nullValue = -search(ss+1, board, -beta, -beta+1, depth-R, false, !cutNode);
         board.undoNullMove();
         if (threads.stop) return 0;
         if (nullValue >= beta) {
@@ -404,7 +414,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
 
             Move* savedNextPv = (ss+1)->pv;
             ss->excludedMove = ttmove;
-            Value seValue = search(ss, board, singularBeta - 1, singularBeta, singularDepth, false);
+            Value seValue = search(ss, board, singularBeta - 1, singularBeta, singularDepth, false, cutNode);
             ss->excludedMove = NOMOVE;
             (ss+1)->pv = savedNextPv;
             if (threads.stop) return 0;
@@ -415,13 +425,13 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         }
 
         // Late move pruning
-        if (!pvNode && !board.checkers() && depth <= 8 && isQuiet && !givesCheck && movesSearched >= lmpThreshold(depth)) {
+        if (!pvNode && !board.checkers() && depth <= 8 && isQuiet && !givesCheck && movesSearched >= lmpThreshold(depth, improving)) {
             continue;
         }
 
         // Futility pruning
         if (!pvNode && !board.checkers() && depth <= 2 && isQuiet && !givesCheck && movesSearched > 1) {
-            Value margin = futilityMargin(depth);
+            Value margin = futilityMargin(depth, improving);
             if (staticEval + margin <= alpha) {
                 continue;
             }
@@ -432,7 +442,7 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
         board.makeMove(move, &st); 
         if (movesSearched == 0) {
             (ss+1)->pv[0] = NOMOVE;
-            currValue= -search(ss+1, board, -beta, -alpha, depth-1+extension, pvNode);
+            currValue= -search(ss+1, board, -beta, -alpha, depth-1+extension, pvNode, pvNode ? false : !cutNode);
         } else {
             (ss+1)->pv[0] = NOMOVE;
             int r = baseReduction(depth, movesSearched);
@@ -443,16 +453,16 @@ Value Worker::search(SearchStack* ss, Board& board, int alpha, int beta, int dep
             }
             r -= pvNode;
             if (depth <= 2 || r < 0) r = 0;
-            currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1+extension-r, false);
+            currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1+extension-r, false, !cutNode);
 
             if (!pvNode && currValue > alpha && r != 0) {
                 (ss+1)->pv[0] = NOMOVE;
-                currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1+extension, false);
+                currValue = -search(ss+1, board, -(alpha+1), -alpha, depth-1+extension, false, !cutNode);
             }
 
             if (pvNode && currValue > alpha) {
                 (ss+1)->pv[0] = NOMOVE;
-                currValue = -search(ss+1, board, -beta, -alpha, depth-1+extension, true);
+                currValue = -search(ss+1, board, -beta, -alpha, depth-1+extension, true, false);
             }
         }
         board.undoMove(move);
@@ -635,20 +645,23 @@ int Worker::baseReduction(int depth, int moveCount) {
     return reductions[depth] * reductions[moveCount] / 2;
 }
 
-inline Value Worker::rfpMargin(int depth) {
-    return Value(80 + 50 * depth);
+inline Value Worker::rfpMargin(int depth, bool improving) {
+    Value margin = Value(80 + 50 * depth);
+    return improving ? margin - RFP_IMPROVING_BONUS : margin;
 }
 
 inline Value Worker::razorMargin(int depth) {
     return Value(200 + 150 * depth);
 }
 
-inline Value Worker::futilityMargin(int depth) {
-    return Value(60 + 40 * depth + 30 * depth * depth);
+inline Value Worker::futilityMargin(int depth, bool improving) {
+    Value margin = Value(60 + 40 * depth + 30 * depth * depth);
+    return improving ? margin - FUTILITY_IMPROVING_BONUS : margin;
 }
 
-inline int Worker::lmpThreshold(int depth) {
-    return 4 + depth * depth;
+inline int Worker::lmpThreshold(int depth, bool improving) {
+    int threshold = 4 + depth * depth;
+    return improving ? threshold : threshold / 2;
 }
 
 void Worker::updateHistories(Board& board, SearchStack* ss, SearchedMoves<SEARCHEDLISTCAP>& searchedCaptures, SearchedMoves<SEARCHEDLISTCAP>& searchedQuiets, Move bestMove, int depth) {
